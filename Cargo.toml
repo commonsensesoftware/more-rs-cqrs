@@ -1,0 +1,31 @@
+[workspace]
+members = [
+	"cqrs",
+	"cqrs-macros",
+	"cqrs-sql",
+	"examples/*",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Chris Martinez <chris.s.martinez@outlook.com>"]
+license = "MIT"
+repository = "https://github.com/commonsensesoftware/more-rs-cqrs"
+rust-version = "1.71.1"
+edition = "2021"
+
+[workspace.dependencies]
+async-stream = "0.3"
+async-trait = "0.1"
+cfg-if = "1.0"
+futures = "0.3"
+futures-core = "0.3"
+more-di = "3.1"
+more-options = "3.3"
+rstest = "0.23"
+serde = "1.0"
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = "1.37"
+uuid = "1.3"

@@ -1,0 +1,38 @@
+[package]
+name = "more-cqrs-sql"
+readme = "README.md"
+description = "SQL storage suppor for CQRS"
+keywords = ["cqrs", "sql"]
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cqrs_sql"
+
+[features]
+di = ["more-cqrs/di", "dep:more-di", "dep:more-options", "dep:serde"]
+postgres = ["sqlx/postgres"]
+sqlite = ["sqlx/sqlite"]
+mysql = ["sqlx/mysql"]
+migrate = ["sqlx/migrate"]
+
+[dependencies]
+more-cqrs = { path = "../cqrs" }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+cfg-if = { workspace = true }
+futures = { workspace = true }
+futures-core = { workspace = true }
+more-di = { workspace = true, features = ["async"], optional = true }
+more-options = { workspace = true, optional = true, features = ["async", "di"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "uuid"] }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+rstest = { workspace = true }

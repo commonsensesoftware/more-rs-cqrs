@@ -1,0 +1,13 @@
+[package]
+name = "simplest-possible-thing"
+version = "0.1.0"
+edition = "2021"
+workspace = "../../"
+
+[dependencies]
+futures = "0.3"
+more-cqrs = { path = "../../cqrs", features = ["di", "mem", "protobuf"] }
+more-di = { version = "3.1", features = ["async"] }
+prost = "0.13"
+tokio = { version = "1.37", features = ["full"] }
+uuid = { version = "1.3", features = ["v4"] }
