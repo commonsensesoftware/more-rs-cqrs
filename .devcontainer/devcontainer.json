@@ -1,18 +1,21 @@
 {
     "name": "Rust",
     "image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
-    "postCreateCommand": "cargo install cargo-expand",
+    "features": {
+        "ghcr.io/lee-orr/rusty-dev-containers/cargo-expand": "latest",
+        "ghcr.io/devcontainers/features/docker-in-docker": "latest"
+    },
     "customizations": {
         "vscode": {
             "extensions": [
                 "rust-lang.rust-analyzer",
-                "eamodio.gitlens",
                 "streetsidesoftware.code-spell-checker",
                 "vadimcn.vscode-lldb",
                 "tamasfe.even-better-toml"
             ],
             "settings": {
-                "editor.formatOnSave": true
+                "editor.formatOnSave": true,
+                "editor.formatOnPaste": true
             }
         }
     }
