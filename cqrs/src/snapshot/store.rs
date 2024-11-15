@@ -15,6 +15,18 @@ pub enum SnapshotError {
     #[error(transparent)]
     InvalidEncoding(#[from] EncodingError),
 
+    /// Indicates the [snapshot](Snapshot) [version](Version) is invalid.
+    /// 
+    /// # Remarks
+    /// 
+    /// An invalid version can most likely happen in one of the following scenarios:
+    /// 
+    /// * A user attempted to generate a [version](Version) explicitly
+    /// * The backing store changed the [mask](crate::Mask) it uses
+    /// * The backing store itself has changed
+    #[error("the specified version is invalid")]
+    InvalidVersion,
+
     /// Indicates an unknown store [error](Error).
     #[error(transparent)]
     Unknown(#[from] Box<dyn Error + Send>),
@@ -24,6 +36,7 @@ impl<T: Debug + Send> From<SnapshotError> for StoreError<T> {
     fn from(value: SnapshotError) -> Self {
         match value {
             SnapshotError::InvalidEncoding(error) => Self::InvalidEncoding(error),
+            SnapshotError::InvalidVersion => Self::InvalidVersion,
             SnapshotError::Unknown(error) => Self::Unknown(error),
         }
     }

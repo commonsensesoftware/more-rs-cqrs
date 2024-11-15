@@ -1,4 +1,4 @@
-use crate::{SqlVersion, SqlVersionPart::*};
+use crate::{SqlVersion, SqlVersionPart::Sequence};
 use cqrs::{
     event::{Event, StoreError},
     message::Transcoder,
@@ -33,47 +33,39 @@ pub struct Row<ID> {
     pub correlation_id: Option<String>,
 }
 
-/// Defines the behavior to iterate events as rows.
-pub trait IntoRows<'a, ID, M: ?Sized + Sync> {
-    fn into_rows(
-        self,
-        id: ID,
-        expected_version: Version,
-        clock: &'a dyn Clock,
-        transcoder: &'a Transcoder<M>,
-    ) -> Iter<'a, ID, M>;
+/// Represents the context used while transforming events into rows.
+pub struct Context<'a, ID, M: ?Sized + Sync> {
+    pub id: ID,
+    pub version: Version,
+    pub clock: &'a dyn Clock,
+    pub transcoder: &'a Transcoder<M>,
 }
 
-impl<'a, ID> IntoRows<'a, ID, dyn Event> for &'a [Box<dyn Event>]
+/// Defines the behavior to iterate events as rows.
+pub trait IntoRows<'a, ID, M: ?Sized + Sync> {
+    fn into_rows(self, context: Context<'a, ID, M>) -> Iter<'a, ID, M>;
+}
+
+impl<'a, ID> IntoRows<'a, ID, dyn Event> for &'a mut [Box<dyn Event>]
 where
     ID: Debug + Send,
 {
-    fn into_rows(
-        self,
-        id: ID,
-        expected_version: Version,
-        clock: &'a dyn Clock,
-        transcoder: &'a Transcoder<dyn Event>,
-    ) -> Iter<'a, ID, dyn Event> {
+    fn into_rows(self, context: Context<'a, ID, dyn Event>) -> Iter<'a, ID, dyn Event> {
         Iter {
             messages: self,
-            id,
             index: 0,
-            version: expected_version.increment(Version),
-            stored_on: crate::to_secs(clock.now()),
-            transcoder,
+            stored_on: crate::to_secs(context.clock.now()),
+            context,
         }
     }
 }
 
 /// Represents an iterator of [rows](Row) for the provided [events](Event).
 pub struct Iter<'a, ID, M: ?Sized + Sync> {
-    messages: &'a [Box<M>],
+    messages: &'a mut [Box<M>],
     index: usize,
-    id: ID,
-    version: Version,
     stored_on: i64,
-    transcoder: &'a Transcoder<M>,
+    context: Context<'a, ID, M>,
 }
 
 impl<'a, ID> Iterator for Iter<'a, ID, dyn Event>
@@ -86,19 +78,25 @@ where
         let i = self.index;
 
         if i < self.messages.len() {
-            let version = self.version;
-            let event = &self.messages[i];
+            let version = self.context.version;
+            let event = &mut self.messages[i];
             let schema = event.schema();
-            let content = match self.transcoder.encode(event.as_ref()) {
+            let current = event.version();
+
+            event.set_version(version);
+            let result = self.context.transcoder.encode(event.as_ref());
+            event.set_version(current);
+
+            let content = match result {
                 Ok(content) => content,
                 Err(error) => return Some(Err(StoreError::InvalidEncoding(error))),
             };
 
             self.index += 1;
-            self.version = self.version.increment(Sequence);
+            self.context.version = self.context.version.increment(Sequence);
 
             Some(Ok(Row::<ID> {
-                id: self.id.clone(),
+                id: self.context.id.clone(),
                 version: version.number(),
                 sequence: version.sequence(),
                 stored_on: self.stored_on,

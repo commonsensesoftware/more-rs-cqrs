@@ -80,6 +80,10 @@ pub(crate) fn expand(attribute: SnapshotAttribute, input: TokenStream) -> TokenS
                     cqrs::event::Event::version(self)
                 }
 
+                fn set_version(&mut self, version: cqrs::Version) {
+                    cqrs::event::Event::set_version(self, version)
+                }
+
                 fn as_any(&self) -> &dyn std::any::Any {
                     self
                 }

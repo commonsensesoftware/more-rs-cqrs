@@ -1,11 +1,13 @@
 mod aggregate;
 mod clock;
+mod mask;
 mod migration;
 mod repository;
 mod version;
 
 pub use aggregate::{Aggregate, ChangeSet, EventHistory};
 pub use clock::{Clock, VirtualClock, WallClock};
+pub use mask::{Mask, SecureMask};
 pub use migration::{StoreMigration, StoreMigrator};
 pub use repository::{Repository, RepositoryError};
 pub use version::Version;

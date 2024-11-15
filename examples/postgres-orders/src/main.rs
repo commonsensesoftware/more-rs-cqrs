@@ -4,7 +4,7 @@ mod events;
 mod item;
 mod order;
 
-use cqrs::{di::CqrsExt, Clock, Repository, RepositoryError, StoreMigrator};
+use cqrs::{di::CqrsExt, Clock, Repository, RepositoryError, SecureMask, StoreMigrator};
 use cqrs_sql::PostgresExt;
 use di::ServiceCollection;
 use events::transcoder::events;
@@ -40,11 +40,14 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
         .add_cqrs(|options| {
             options.transcoders.events.push(events());
 
+            // note: in a production application which securely masks concurrency versions,
+            // you would want to specify persistent key that you supply to SecureMask
             options
                 .store::<Order>()
                 .in_postgres()
                 .with()
                 .url(url)
+                .mask(SecureMask::ephemeral()) 
                 .migrations();
         })
         .build_provider()
@@ -61,7 +64,7 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
 
     // 3. add some items
     order.add(clock.now(), Item::new("BTSPKR", "Speaker", 30.0, 1))?;
-    order.add(clock.now(), Item::new("CKBK", "Book Book", 10.0, 1))?;
+    order.add(clock.now(), Item::new("CKBK", "Cookbook", 10.0, 1))?;
     order.add(clock.now(), Item::new("PANZ", "Pans", 15.0, 3))?;
     repository.save(&mut order).await?;
 
@@ -88,10 +91,10 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
         if let Err(OrderError::CheckedOut) = order2.checkout(clock.now(), 85.0, transaction_id) {
             println!("The order has already been checked out, but you were only charged once.")
         } else {
-            unreachable!("business rule violated")
+            panic!("business rule violated")
         }
     } else {
-        unreachable!("lost update")
+        panic!("lost update")
     }
 
     // 6. ship it

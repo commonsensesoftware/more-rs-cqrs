@@ -8,7 +8,7 @@ use cqrs::{
     event::Event,
     message::{Message, Transcoder},
     snapshot::Snapshot,
-    Aggregate, Clock, Repository,
+    Aggregate, Clock, Mask, Repository,
 };
 use di::{
     exactly_one, exactly_one_with_key, singleton_as_self, singleton_with_key, transient_as_self,
@@ -20,7 +20,7 @@ use sqlx::{
     pool::PoolOptions,
     ColumnIndex, Database, Decode, Encode, Executor, IntoArguments, Type,
 };
-use std::{any::type_name, marker::PhantomData};
+use std::{any::type_name, marker::PhantomData, sync::Arc};
 
 type DynEventStore<ID> = dyn cqrs::event::Store<ID>;
 type DynSnapshotStore<ID> = dyn cqrs::snapshot::Store<ID>;
@@ -189,6 +189,7 @@ where
     parent: SqlStoreBuilder<'a, A, DB>,
     url: Option<String>,
     options: Option<PoolOptions<DB>>,
+    mask: Option<Box<dyn Mask>>,
     use_snapshots: bool,
 }
 
@@ -212,6 +213,7 @@ where
             parent,
             url: None,
             options: None,
+            mask: None,
             use_snapshots: false,
         }
     }
@@ -260,6 +262,16 @@ where
         self.options = Some(value);
         self
     }
+
+    /// Configures the associated mask.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - the [mask](Mask) used to obfuscate [versions](cqrs::Version)
+    pub fn mask<V: Mask + 'static>(mut self, value: V) -> Self {
+        self.mask = Some(Box::new(value));
+        self
+    }
 }
 
 pub struct SqlMigrationsBuilder<'a, A, DB>
@@ -302,7 +314,10 @@ where
     for<'c> &'c snapshot::SqlStore<A::ID, DB>: Into<Migration>,
 {
     fn new(parent: SqlStoreOptionsBuilder<'a, A, DB>) -> Self {
-        parent.parent.services.try_add_to_all(SqlStoreMigrator::<DB>::transient());
+        parent
+            .parent
+            .services
+            .try_add_to_all(SqlStoreMigrator::<DB>::transient());
         Self { parent }
     }
 }
@@ -441,15 +456,17 @@ where
         let name = self.parent.name;
         let url = self.url.clone();
         let cfg_options = self.options.clone();
+        let mask = self.mask.take().map(Arc::from);
 
         self.use_snapshots = true;
         self.parent.services.try_add(
             singleton_with_key::<A, DynSnapshotStore<A::ID>, snapshot::SqlStore<A::ID, DB>>()
+                .depends_on(zero_or_one::<dyn Mask>())
                 .depends_on(exactly_one::<Transcoder<dyn Snapshot>>())
                 .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<DB>>>())
                 .from(move |sp| {
                     let di_options = sp.get::<dyn OptionsSnapshot<SqlOptions<DB>>>();
-                    let builder = merge(
+                    let mut builder = merge(
                         snapshot::SqlStore::<A::ID, DB>::builder()
                             .table(name)
                             .transcoder(sp.get_required::<Transcoder<dyn Snapshot>>()),
@@ -458,6 +475,11 @@ where
                         cfg_options.as_ref(),
                         di_options.as_ref(),
                     );
+
+                    if let Some(mask) = mask.clone().or_else(|| sp.get::<dyn Mask>()) {
+                        builder = builder.mask(mask);
+                    }
+                    
                     Ref::new(builder.build().unwrap())
                 }),
         );
@@ -485,6 +507,7 @@ where
         let name = self.parent.name;
         let url = self.url.clone();
         let cfg_options = self.options.clone();
+        let mask = self.mask.take().map(Arc::from);
 
         self.parent.services.try_add(
             singleton_with_key::<A, DynEventStore<A::ID>, event::SqlStore<A::ID, DB>>()
@@ -508,6 +531,10 @@ where
                     if let Some(snapshots) = sp.get_by_key::<A, DynSnapshotStore<A::ID>>() {
                         builder =
                             builder.snapshots(Ref::<DynSnapshotStore<A::ID>>::from(snapshots));
+                    }
+
+                    if let Some(mask) = mask.clone().or_else(|| sp.get::<dyn Mask>()) {
+                        builder = builder.mask(mask);
                     }
 
                     Ref::new(builder.build().unwrap())

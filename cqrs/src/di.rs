@@ -2,7 +2,7 @@ mod builder;
 mod options;
 
 pub use builder::AggregateBuilder;
-pub use options::*;
+pub use options::{CqrsOptions, TranscoderOptions};
 
 use crate::{
     message::{Message, Transcoder}, StoreMigrator, WallClock

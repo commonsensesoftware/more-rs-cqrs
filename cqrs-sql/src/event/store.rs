@@ -1,6 +1,8 @@
 use super::command;
 use crate::{
-    new_version, sql::{Ident, IntoRows}, BoxErr, SqlStoreBuilder, SqlVersion
+    new_version,
+    sql::{Context, Ident, IntoRows},
+    BoxErr, SqlStoreBuilder, SqlVersion, SqlVersionPart,
 };
 use async_stream::try_stream;
 use async_trait::async_trait;
@@ -8,7 +10,7 @@ use cqrs::{
     event::{Event, EventStream, Predicate, Store, StoreError},
     message::{Descriptor, Schema, Transcoder},
     snapshot::{self, SnapshotError},
-    Clock, Version,
+    Clock, Mask, Version,
 };
 use futures::{stream, Stream};
 use sqlx::{
@@ -20,19 +22,32 @@ use std::{error::Error, fmt::Debug, sync::Arc};
 fn select_version<T: Debug + Send>(
     snapshot: Option<&Descriptor>,
     predicate: &Predicate<'_, T>,
+    mask: Option<Arc<dyn Mask>>,
 ) -> Option<i32> {
     if let Some(snapshot) = snapshot {
-        let version = snapshot.version;
+        let version = if let Some(mask) = &mask {
+            snapshot.version.unmask((*mask).clone()).number()
+        } else {
+            snapshot.version.number()
+        };
 
         if let Some(other) = predicate.version {
-            if version >= other {
-                Some(version.number())
+            let other = if let Some(mask) = &mask {
+                other.unmask((*mask).clone()).number()
             } else {
-                Some(other.number())
+                other.number()
+            };
+
+            if version >= other {
+                Some(version)
+            } else {
+                Some(other)
             }
         } else {
-            Some(version.number())
+            Some(version)
         }
+    } else if let Some(mask) = mask {
+        predicate.version.as_ref().map(|v| v.unmask(&mask).number())
     } else {
         predicate.version.as_ref().map(SqlVersion::number)
     }
@@ -42,6 +57,7 @@ fn query<'a, ID, DB>(
     mut db: PoolConnection<DB>,
     ident: Ident<'a>,
     predicate: Option<&'a Predicate<'a, ID>>,
+    mask: Option<Arc<dyn Mask>>,
     transcoder: Arc<Transcoder<dyn Event>>,
     snapshot: Option<Descriptor>,
 ) -> impl Stream<Item = Result<Box<dyn Event>, StoreError<ID>>> + Send + 'a
@@ -66,7 +82,7 @@ where
         let mut version = None;
 
         if let Some(filter) = predicate {
-            version = select_version(snapshot.as_ref(), filter);
+            version = select_version(snapshot.as_ref(), filter, mask.clone());
 
             if let Some(snapshot) = snapshot {
                 let event = transcoder.decode(&snapshot.schema, &snapshot.content)?;
@@ -84,7 +100,11 @@ where
                 row.get::<i16, _>(REVISION) as u8,
             );
             let content = row.get::<&[u8], _>(CONTENT);
-            let event = transcoder.decode(&schema, content)?;
+            let mut event = transcoder.decode(&schema, content)?;
+
+            if let Some(mask) = &mask {
+                event.set_version(event.version().mask(mask));
+            }
 
             yield event;
         }
@@ -95,6 +115,7 @@ where
 pub struct SqlStore<ID, DB: Database> {
     pub(crate) table: Ident<'static>,
     pub(crate) pool: Pool<DB>,
+    mask: Option<Arc<dyn Mask>>,
     clock: Arc<dyn Clock>,
     transcoder: Arc<Transcoder<dyn Event>>,
     snapshots: Option<Arc<dyn snapshot::Store<ID>>>,
@@ -107,11 +128,13 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
     ///
     /// * `table` - the table [identifier](Ident)
     /// * `pool` - the underlying [connection pool](Pool)
+    /// * `mask` - the optional [mask](Mask) used to obfuscate [versions](Version)
     /// * `clock` - the associated [clock](Clock)
     /// * `transcoder` - the associated [transcoder](Transcoder)
     pub fn new(
         table: Ident<'static>,
         pool: Pool<DB>,
+        mask: Option<Arc<dyn Mask>>,
         clock: Arc<dyn Clock>,
         transcoder: Arc<Transcoder<dyn Event>>,
         snapshots: Option<Arc<dyn snapshot::Store<ID>>>,
@@ -119,6 +142,7 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
         Self {
             table,
             pool,
+            mask,
             clock,
             transcoder,
             snapshots,
@@ -186,21 +210,37 @@ where
             Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::from(error))])),
         };
         let table = self.table.clone();
+        let mask = self.mask.clone();
         let transcoder = self.transcoder.clone();
 
-        Box::pin(query(db, table, predicate, transcoder, snapshot))
+        Box::pin(query(db, table, predicate, mask, transcoder, snapshot))
     }
 
     async fn save(
         &self,
         id: &ID,
         events: &mut [Box<dyn Event>],
-        expected_version: Version,
+        mut expected_version: Version,
     ) -> Result<(), StoreError<ID>> {
-        let mut versions = Vec::with_capacity(events.len());
-        let mut rows =
-            events.into_rows(id.clone(), expected_version, &*self.clock, &self.transcoder);
+        if expected_version != Version::default() {
+            if let Some(mask) = self.mask.clone() {
+                expected_version = expected_version.unmask(&mask);
+            }
+        }
+        
+        if expected_version.invalid() {
+            println!("invalid version: {:?}", expected_version);
+            return Err(StoreError::InvalidVersion);
+        }
 
+        let mut versions = Vec::with_capacity(events.len());
+        let context = Context {
+            id: id.clone(),
+            version: expected_version.increment(SqlVersionPart::Version),
+            clock: &*self.clock,
+            transcoder: &self.transcoder,
+        };
+        let mut rows = events.into_rows(context);
         let first = if let Some(row) = rows.next() {
             row?
         } else {
@@ -241,8 +281,14 @@ where
             }
         }
 
-        for (i, version) in versions.into_iter().enumerate() {
-            events[i].set_version(version);
+        if let Some(mask) = &self.mask {
+            for (i, version) in versions.into_iter().enumerate() {
+                events[i].set_version(version.mask(mask));
+            }
+        } else {
+            for (i, version) in versions.into_iter().enumerate() {
+                events[i].set_version(version);
+            }
         }
 
         Ok(())

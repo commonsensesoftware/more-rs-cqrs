@@ -1,5 +1,6 @@
+use crate::Mask;
 use cfg_if::cfg_if;
-use std::fmt::{self, Debug, Formatter, Result as FormatResult};
+use std::{array::TryFromSliceError, fmt::{self, Debug, Formatter, Result as FormatResult}};
 
 /// Represents an entity version.
 ///
@@ -37,11 +38,35 @@ impl Version {
     pub const fn new(value: u64) -> Self {
         Self(value)
     }
+
+    /// Obfuscates the version using the provided mask.
+    ///
+    /// # Arguments
+    ///
+    /// * `mask` - the [mask](Mask) used to obfuscate the [version](Version)
+    pub fn mask<M: AsRef<dyn Mask>>(&self, mask: M) -> Self {
+        Self::from(mask.as_ref().mask(self.into()))
+    }
+
+    /// Deobfuscates the version using the provided mask.
+    ///
+    /// # Arguments
+    ///
+    /// * `mask` - the [mask](Mask) used to deobfuscate the [version](Version)
+    pub fn unmask<M: AsRef<dyn Mask>>(&self, mask: M) -> Self {
+        Self::from(mask.as_ref().unmask(self.into()))
+    }
 }
 
 impl From<u64> for Version {
     fn from(value: u64) -> Self {
         Self(value)
+    }
+}
+
+impl From<[u8; 8]> for Version {
+    fn from(value: [u8; 8]) -> Self {
+        Self(u64::from_be_bytes(value))
     }
 }
 
@@ -54,6 +79,42 @@ impl From<Version> for u64 {
 impl From<&Version> for u64 {
     fn from(value: &Version) -> Self {
         value.0
+    }
+}
+
+impl From<Version> for [u8; 8] {
+    fn from(value: Version) -> Self {
+        value.0.to_be_bytes()
+    }
+}
+
+impl From<&Version> for [u8; 8] {
+    fn from(value: &Version) -> Self {
+        value.0.to_be_bytes()
+    }
+}
+
+impl TryFrom<&[u8]> for Version {
+    type Error = TryFromSliceError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Ok(<Self as From<[u8; 8]>>::from(value.try_into()?))
+    }
+}
+
+impl TryFrom<&Vec<u8>> for Version {
+    type Error = TryFromSliceError;
+
+    fn try_from(value: &Vec<u8>) -> Result<Self, Self::Error> {
+        Self::try_from(value.as_slice())
+    }
+}
+
+impl TryFrom<Vec<u8>> for Version {
+    type Error = TryFromSliceError;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::try_from(value.as_slice())
     }
 }
 

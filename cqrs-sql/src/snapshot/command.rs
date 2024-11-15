@@ -1,14 +1,14 @@
 use super::Upsert;
 use crate::{sql, SqlVersion};
-use cqrs::snapshot::Predicate;
+use cqrs::{snapshot::Predicate, Mask};
 use sqlx::{Database, Encode, Executor, IntoArguments, QueryBuilder, Type};
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
-fn _select<'a, ID, DB>(
-    columns: &'static str,
+pub fn select<'a, ID, DB>(
     table: &sql::Ident<'a>,
     id: &'a ID,
     predicate: Option<&Predicate>,
+    mask: Option<Arc<dyn Mask>>,
 ) -> QueryBuilder<'a, DB>
 where
     ID: Debug + Encode<'a, DB> + Send + Type<DB> + 'a,
@@ -16,7 +16,7 @@ where
     i32: Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
     i64: Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
 {
-    let mut select = QueryBuilder::new(columns);
+    let mut select = QueryBuilder::new("SELECT version, sequence, type, revision, content ");
 
     select
         .push(" FROM ")
@@ -25,7 +25,11 @@ where
         .push_bind(id);
 
     if let Some(predicate) = predicate {
-        if let Some(version) = predicate.min_version {
+        if let Some(mut version) = predicate.min_version {
+            if let Some(mask) = &mask {
+                version = version.unmask(mask);
+            }
+
             select.push(" AND version >= ").push_bind(version.number());
         }
 
@@ -41,41 +45,6 @@ where
 
     select.push(" LIMIT 1;");
     select
-}
-
-#[inline]
-pub fn select<'a, ID, DB>(
-    table: &sql::Ident<'a>,
-    id: &'a ID,
-    predicate: Option<&Predicate>,
-) -> QueryBuilder<'a, DB>
-where
-    ID: Debug + Encode<'a, DB> + Send + Type<DB> + 'a,
-    DB: Database,
-    i32: Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
-    i64: Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
-{
-    _select("SELECT type, revision, content ", table, id, predicate)
-}
-
-#[inline]
-pub fn select_raw<'a, ID, DB>(
-    table: &sql::Ident<'a>,
-    id: &'a ID,
-    predicate: Option<&Predicate>,
-) -> QueryBuilder<'a, DB>
-where
-    ID: Debug + Encode<'a, DB> + Send + Type<DB> + 'a,
-    DB: Database,
-    i32: Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
-    i64: Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
-{
-    _select(
-        "SELECT version, sequence, type, revision, content ",
-        table,
-        id,
-        predicate,
-    )
 }
 
 pub fn insert<'a, ID, DB>(table: &'a sql::Ident<'a>, row: &'a sql::Row<ID>) -> QueryBuilder<'a, DB>

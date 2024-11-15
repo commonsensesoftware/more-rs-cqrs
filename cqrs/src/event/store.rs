@@ -46,6 +46,18 @@ pub enum StoreError<T: Debug + Send> {
     #[error(transparent)]
     InvalidEncoding(#[from] EncodingError),
 
+    /// Indicates the specified [version](Version) is invalid.
+    /// 
+    /// # Remarks
+    /// 
+    /// An invalid version can most likely happen in one of the following scenarios:
+    /// 
+    /// * A user attempted to generate a [version](Version) explicitly
+    /// * The backing store changed the [mask](crate::Mask) it uses
+    /// * The backing store itself has changed
+    #[error("the specified version is invalid")]
+    InvalidVersion,
+
     /// Indicates that a batch size is too large and provides maximum size allowed.
     #[error("the batch to store is greater than {0}, which is the maximum size allowed")]
     BatchTooLarge(u8),

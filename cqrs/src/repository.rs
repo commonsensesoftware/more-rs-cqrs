@@ -24,6 +24,18 @@ pub enum RepositoryError<T: Debug + Send> {
     #[error(transparent)]
     InvalidEncoding(#[from] EncodingError),
 
+    /// Indicates the [aggregate](Aggregate) [version](Version) is invalid.
+    /// 
+    /// # Remarks
+    /// 
+    /// An invalid version can most likely happen in one of the following scenarios:
+    /// 
+    /// * A user attempted to generate a [version](Version) explicitly
+    /// * The backing store changed the [mask](crate::Mask) it uses
+    /// * The backing store itself has changed
+    #[error("the specified version is invalid")]
+    InvalidVersion,
+
     /// Indicates an unknown [error](Error).
     #[error(transparent)]
     Unknown(#[from] Box<dyn Error + Send>),
@@ -34,6 +46,7 @@ impl<T: Debug + Send + 'static> From<StoreError<T>> for RepositoryError<T> {
         match value {
             StoreError::Conflict(id, version) => Self::Conflict(id, version),
             StoreError::InvalidEncoding(error) => Self::InvalidEncoding(error),
+            StoreError::InvalidVersion => Self::InvalidVersion,
             StoreError::Unknown(error) => Self::Unknown(error),
             _ => Self::Unknown(Box::new(value)),
         }
