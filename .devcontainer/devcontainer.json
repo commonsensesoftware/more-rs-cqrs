@@ -1,0 +1,19 @@
+{
+    "name": "Rust",
+    "image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
+    "postCreateCommand": "cargo install cargo-expand",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "eamodio.gitlens",
+                "streetsidesoftware.code-spell-checker",
+                "vadimcn.vscode-lldb",
+                "tamasfe.even-better-toml"
+            ],
+            "settings": {
+                "editor.formatOnSave": true
+            }
+        }
+    }
+}
