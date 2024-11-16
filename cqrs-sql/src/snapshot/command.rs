@@ -2,7 +2,20 @@ use super::Upsert;
 use crate::{sql, SqlVersion};
 use cqrs::{snapshot::Predicate, Mask};
 use sqlx::{Database, Encode, Executor, IntoArguments, QueryBuilder, Type};
-use std::{fmt::Debug, sync::Arc};
+use std::{
+    fmt::Debug,
+    ops::Bound::{self, *},
+    sync::Arc,
+};
+
+#[inline]
+fn ge<T: Copy>(bound: &Bound<T>) -> (&'static str, T) {
+    match bound {
+        Included(value) => (">=", *value),
+        Excluded(value) => (">", *value),
+        _ => unreachable!(),
+    }
+}
 
 pub fn select<'a, ID, DB>(
     table: &sql::Ident<'a>,
@@ -25,17 +38,26 @@ where
         .push_bind(id);
 
     if let Some(predicate) = predicate {
-        if let Some(mut version) = predicate.min_version {
+        if !matches!(predicate.min_version, Unbounded) {
+            let (op, mut version) = ge(&predicate.min_version);
+
             if let Some(mask) = &mask {
                 version = version.unmask(mask);
             }
 
-            select.push(" AND version >= ").push_bind(version.number());
+            select
+                .push(" AND version ")
+                .push(op)
+                .push(" ")
+                .push_bind(version.number());
         }
 
-        if let Some(since) = predicate.since {
+        if !matches!(predicate.since, Unbounded) {
+            let (op, since) = ge(&predicate.since);
             select
-                .push(" AND taken_on >= ")
+                .push(" AND ")
+                .push(op)
+                .push(" ")
                 .push_bind(crate::to_secs(since))
                 .push(" ORDER BY taken_on");
         }

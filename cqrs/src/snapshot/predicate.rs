@@ -1,23 +1,32 @@
 use crate::{event, Version};
-use std::{fmt::Debug, time::SystemTime};
+use std::{
+    fmt::Debug,
+    ops::{Bound, Bound::Unbounded},
+    time::SystemTime,
+};
 
 /// Represents the predicate that can be applied to filter events.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct Predicate {
     /// Gets or sets the minimum snapshot [version](Version) to apply to the predicate, if any.
     ///
     /// # Remarks
     ///
     /// The specified value is typically exclusive.
-    pub min_version: Option<Version>,
+    pub min_version: Bound<Version>,
 
     /// Gets or sets the [date and time](SystemTime) to apply to the predicate since a
     /// snapshot was taken, if any.
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically inclusive.
-    pub since: Option<SystemTime>,
+    pub since: Bound<SystemTime>,
+}
+
+impl Default for Predicate {
+    fn default() -> Self {
+        Self {
+            min_version: Unbounded,
+            since: Unbounded,
+        }
+    }
 }
 
 /// Represents a builder to create a [`Predicate`].
@@ -35,12 +44,8 @@ impl PredicateBuilder {
     /// # Arguments
     ///
     /// * `value` - the minimum snapshot [version](Version)
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically exclusive.
-    pub fn min_version(mut self, value: Version) -> Self {
-        self.0.min_version = Some(value);
+    pub fn min_version(mut self, value: Bound<Version>) -> Self {
+        self.0.min_version = value;
         self
     }
 
@@ -50,12 +55,8 @@ impl PredicateBuilder {
     /// # Arguments
     ///
     /// * `value` - the [date and time](SystemTime) since the snapshot was taken
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically inclusive.
-    pub fn since(mut self, value: SystemTime) -> Self {
-        self.0.since = Some(value);
+    pub fn since(mut self, value: Bound<SystemTime>) -> Self {
+        self.0.since = value;
         self
     }
 
@@ -73,17 +74,10 @@ impl From<PredicateBuilder> for Predicate {
 
 impl<'a, T: Debug + Send> From<&'a event::Predicate<'a, T>> for Predicate {
     fn from(value: &'a event::Predicate<'a, T>) -> Self {
-        let mut builder = PredicateBuilder::new();
-
-        if let Some(version) = value.version {
-            builder = builder.min_version(version);
-        }
-
-        if let Some(time) = value.from {
-            builder = builder.since(time);
-        }
-
-        builder.build()
+        PredicateBuilder::new()
+            .min_version(value.version)
+            .since(value.stored_on.from.clone())
+            .build()
     }
 }
 
@@ -92,4 +86,3 @@ impl<'a, T: Debug + Send> From<event::Predicate<'a, T>> for Predicate {
         (&value).into()
     }
 }
- 

@@ -2,7 +2,7 @@ use crate::{
     event::{self, Event, EventStream, Predicate, StoreError},
     message::{Descriptor, Schema, Transcoder},
     snapshot::{self, Snapshot, SnapshotError},
-    Clock, Version,
+    Clock, Range, Version,
 };
 use async_trait::async_trait;
 use cfg_if::cfg_if;
@@ -11,6 +11,7 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     hash::Hash,
+    ops::Bound::{self, Excluded, Included},
     sync::{Arc, RwLock},
     time::SystemTime,
 };
@@ -126,23 +127,15 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
         id: &T,
         predicate: Option<&snapshot::Predicate>,
     ) -> Result<Option<Box<dyn Snapshot>>, SnapshotError> {
-        let table = self.table.read().unwrap();
-
-        if let Some(row) = table.get(id) {
-            if let Some(predicate) = predicate {
-                if let Some(version) = predicate.min_version {
-                    if row.version > version {
-                        return Ok(None);
-                    }
-                }
-            }
-
-            return Ok(Some(self.transcoder
-                .decode(&row.schema, &row.data)
-                .map_err(SnapshotError::InvalidEncoding)?));
+        if let Some(descriptor) = self.load_raw(id, predicate).await? {
+            Ok(Some(
+                self.transcoder
+                    .decode(&descriptor.schema, &descriptor.content)
+                    .map_err(SnapshotError::InvalidEncoding)?,
+            ))
+        } else {
+            Ok(None)
         }
-
-        Ok(None)
     }
 
     async fn load_raw(
@@ -154,10 +147,18 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
 
         if let Some(row) = table.get(id) {
             if let Some(predicate) = predicate {
-                if let Some(version) = predicate.min_version {
+                match predicate.min_version {
+                    Included(version) => {
+                        if row.version >= version {
+                            return Ok(None);
+                        }
+                    }
+                    Excluded(version) => {
                     if row.version > version {
                         return Ok(None);
+                        }
                     }
+                    _ => {}
                 }
             }
 
@@ -278,24 +279,29 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> EventStore<T> {
     }
 }
 
+#[inline]
+fn greater_than_or_equal(bound: &Bound<SystemTime>, now: &SystemTime) -> bool {
+    match bound {
+        Included(value) => now >= value,
+        Excluded(value) => now > value,
+        _ => true,
+    }
+}
+
+#[inline]
+fn less_than_or_equal(bound: &Bound<SystemTime>, now: &SystemTime) -> bool {
+    match bound {
+        Included(value) => now <= value,
+        Excluded(value) => now < value,
+        _ => true,
+    }
+}
+
 fn by<T: Debug + Send>(row: &Row, now: SystemTime, option: Option<&Predicate<T>>) -> bool {
     if let Some(predicate) = option {
         if predicate.types.is_empty() || predicate.types.contains(&row.schema) {
-            if let Some(from) = predicate.from {
-                if now >= from {
-                    if let Some(to) = predicate.to {
-                        now <= to
-                    } else {
-                        true
-                    }
-                } else {
-                    false
-                }
-            } else if let Some(to) = predicate.to {
-                now <= to
-            } else {
-                true
-            }
+            greater_than_or_equal(&predicate.stored_on.from, &now)
+                && less_than_or_equal(&predicate.stored_on.to, &now)
         } else {
             false
         }
@@ -311,17 +317,27 @@ fn select_version<T: Debug + Send>(
     if let Some(snapshot) = snapshot {
         let version = snapshot.version;
 
-        if let Some(other) = predicate.version {
-            if version >= other {
-                Some(version.number() as usize)
-            } else {
-                Some(other.number() as usize)
+        match predicate.version {
+            Included(other) => {
+                if other >= version {
+                    return Some(other.number() as usize);
+                }
             }
-        } else {
-            Some(version.number() as usize)
+            Excluded(other) => {
+                if other > version {
+                    return Some(other.number() as usize);
+            }
+            }
+            _ => {}
         }
+
+            Some(version.number() as usize)
     } else {
-        predicate.version.map(|v| v.number() as usize)
+        match predicate.version {
+            Included(version) => Some(version.number() as usize),
+            Excluded(version) => Some(version.number() as usize),
+            _ => None,
+        }
     }
 }
 
@@ -374,7 +390,12 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
             } else {
                 let transcoder = self.transcoder.clone();
                 let now = self.clock.clone().now();
-                let rows: Vec<_> = if let Some(version) = predicate.version {
+                let version = match predicate.version {
+                    Included(version) => Some(version),
+                    Excluded(version) => Some(version),
+                    _ => None,
+                };
+                let rows: Vec<_> = if let Some(version) = version {
                     let index = version.number() as usize;
                     let mut filtered = Vec::new();
 

@@ -1,7 +1,10 @@
 use crate::message::Schema;
-use crate::Version;
-use std::fmt::Debug;
-use std::time::SystemTime;
+use crate::{Range, Version};
+use std::{
+    fmt::Debug,
+    ops::{Bound, Bound::Unbounded},
+    time::SystemTime,
+};
 use uuid::Uuid;
 
 /// Represents the supported load options.
@@ -22,34 +25,19 @@ impl Default for LoadOptions {
 }
 
 /// Represents the predicate that can be applied to filter events.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct Predicate<'a, T: Debug + Send = Uuid> {
     /// Gets or sets the associated identifier, if any.
     pub id: Option<&'a T>,
 
     /// Gets or sets the event [version](Version) to apply to a predicate, if any.
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically exclusive.
-    pub version: Option<Version>,
+    pub version: Bound<Version>,
 
     /// Gets or sets the event types to apply to the predicate.
     pub types: Vec<Schema>,
 
-    /// Gets or sets the first event recorded [date and time](SystemTime) to apply to a predicate, if any.
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically inclusive.
-    pub from: Option<SystemTime>,
-
-    /// Gets or sets the last event recorded [date and time](SystemTime) to apply to a predicate, if any.
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically inclusive.    
-    pub to: Option<SystemTime>,
+    /// Gets or sets the [date](SystemTime) [range](Range) to apply to a predicate, if any.
+    pub stored_on: Range<SystemTime>,
 
     /// Gets or sets the associated [load options](LoadOptions).
     pub load: LoadOptions,
@@ -64,12 +52,17 @@ impl<'a, T: Debug + Send> Predicate<'a, T> {
     pub fn new(id: Option<&'a T>) -> Self {
         Self {
             id,
-            version: Default::default(),
+            version: Unbounded,
             types: Default::default(),
-            from: Default::default(),
-            to: Default::default(),
+            stored_on: Default::default(),
             load: Default::default(),
         }
+    }
+}
+
+impl<'a, T: Debug + Send> Default for Predicate<'a, T> {
+    fn default() -> Self {
+        Self::new(None)
     }
 }
 
@@ -92,12 +85,8 @@ impl<'a, T: Debug + Send> PredicateBuilder<'a, T> {
     /// # Arguments
     ///
     /// * `value` - the event [version](Version)
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically exclusive.
-    pub fn version(mut self, value: Version) -> Self {
-        self.0.version = Some(value);
+    pub fn version(mut self, value: Bound<Version>) -> Self {
+        self.0.version = value;
         self
     }
 
@@ -115,31 +104,13 @@ impl<'a, T: Debug + Send> PredicateBuilder<'a, T> {
         self
     }
 
-    /// Sets the first event recorded date and time to apply to a predicate.
+    /// Sets the [date](SystemTime) [range](Range) of recorded events to a predicate.
     ///
     /// # Arguments
     ///
-    /// * `value` - the first recorded date and time
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically inclusive.
-    pub fn from(mut self, value: SystemTime) -> Self {
-        self.0.from = Some(value);
-        self
-    }
-
-    /// Sets the last event recorded date and time to apply to a predicate.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - the last recorded date and time
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically inclusive.
-    pub fn to(mut self, value: SystemTime) -> Self {
-        self.0.to = Some(value);
+    /// * `value` - the [date](SystemTime) [range](Range)
+    pub fn stored_on<R: Into<Range<SystemTime>>>(mut self, value: R) -> Self {
+        self.0.stored_on = value.into();
         self
     }
 
@@ -163,23 +134,13 @@ impl<'a, T: Debug + Send> PredicateBuilder<'a, T> {
     ///
     /// Only non-default values are merged.
     pub fn merge(mut self, predicate: &'a Predicate<'a, T>) -> Self {
-        if let Some(value) = predicate.from {
-            self.0.from = Some(value);
-        }
-
         if let Some(value) = predicate.id {
             self.0.id = Some(value);
         }
 
-        if let Some(value) = predicate.to {
-            self.0.to = Some(value);
-        }
-
+        self.0.version = predicate.version;
+        self.0.stored_on = predicate.stored_on.clone();
         self.0.types.extend(predicate.types.iter().cloned());
-
-        if let Some(value) = predicate.version {
-            self.0.version = Some(value);
-        }
 
         if !predicate.load.snapshots {
             self.0.load.snapshots = false;

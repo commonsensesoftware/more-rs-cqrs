@@ -1,4 +1,5 @@
 use crate::event::PredicateBuilder;
+use crate::Range;
 use std::fmt::Debug;
 use std::time::SystemTime;
 use uuid::Uuid;
@@ -7,8 +8,7 @@ use uuid::Uuid;
 #[derive(Clone, Default)]
 pub struct Filter<'a, T: Debug + Send = Uuid> {
     id: Option<&'a T>,
-    from: Option<SystemTime>,
-    to: Option<SystemTime>,
+    stored_on: Range<SystemTime>,
 }
 
 impl<'a, T: Debug + Send> Filter<'a, T> {
@@ -20,8 +20,7 @@ impl<'a, T: Debug + Send> Filter<'a, T> {
     pub fn new(id: Option<&'a T>) -> Self {
         Self {
             id,
-            from: Default::default(),
-            to: Default::default(),
+            stored_on: Range::none(),
         }
     }
 
@@ -30,22 +29,9 @@ impl<'a, T: Debug + Send> Filter<'a, T> {
         self.id
     }
 
-    /// Gets the first event recorded date and time to filter by, if any.
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically inclusive.
-    pub fn from(&self) -> Option<SystemTime> {
-        self.from
-    }
-
-    /// Gets the last event recorded date and time to filter by, if any.
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically inclusive.
-    pub fn to(&self) -> Option<SystemTime> {
-        self.to
+    /// Gets the [date](SystemTime) [range](Range) of recorded events to a predicate.
+    pub fn stored_on(&self) -> &Range<SystemTime> {
+        &self.stored_on
     }
 }
 
@@ -63,31 +49,13 @@ impl<'a, T: Debug + Send> FilterBuilder<'a, T> {
         Self(Filter::new(id))
     }
 
-    /// Sets the first event recorded date and time to filter by.
+    /// Sets the [date](SystemTime) [range](Range) of recorded events to filter by.
     ///
     /// # Arguments
     ///
-    /// * `value` - the first recorded date and time
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically inclusive.
-    pub fn from(mut self, value: SystemTime) -> Self {
-        self.0.from = Some(value);
-        self
-    }
-
-    /// Sets the last event recorded date and time to filter by.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - the last recorded date and time
-    ///
-    /// # Remarks
-    ///
-    /// The specified value is typically inclusive.
-    pub fn to(mut self, value: SystemTime) -> Self {
-        self.0.to = Some(value);
+    /// * `value` - the [date](SystemTime) [range](Range)
+    pub fn stored_on<R: Into<Range<SystemTime>>>(mut self, value: R) -> Self {
+        self.0.stored_on = value.into();
         self
     }
 
@@ -105,16 +73,6 @@ impl<'a, T: Debug + Send> From<FilterBuilder<'a, T>> for Filter<'a, T> {
 
 impl<'a, T: Debug + Send> From<&Filter<'a, T>> for PredicateBuilder<'a, T> {
     fn from(value: &Filter<'a, T>) -> Self {
-        let mut me = Self::new(value.id);
-
-        if let Some(from) = value.from() {
-            me = me.from(from);
-        }
-
-        if let Some(to) = value.to() {
-            me = me.to(to);
-        }
-
-        me
+        Self::new(value.id).stored_on(value.stored_on().clone())
     }
 }

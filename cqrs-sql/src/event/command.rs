@@ -1,7 +1,80 @@
 use crate::sql;
-use cqrs::event::{Predicate, StoreError};
+use cqrs::{
+    event::{Predicate, StoreError},
+    Range,
+};
 use sqlx::{Database, Encode, Executor, IntoArguments, QueryBuilder, Transaction, Type};
-use std::{error::Error, fmt::Debug};
+use std::{
+    error::Error,
+    fmt::Debug,
+    ops::Bound::{self, *},
+    time::SystemTime,
+};
+
+#[inline]
+fn ge(bound: &Bound<SystemTime>) -> (&'static str, SystemTime) {
+    match bound {
+        Included(value) => (">=", *value),
+        Excluded(value) => (">", *value),
+        _ => unreachable!(),
+    }
+}
+
+#[inline]
+fn le(bound: &Bound<SystemTime>) -> (&'static str, SystemTime) {
+    match bound {
+        Included(value) => ("<=", *value),
+        Excluded(value) => ("<", *value),
+        _ => unreachable!(),
+    }
+}
+
+#[inline]
+fn and_stored_on<'a, D>(builder: &mut QueryBuilder<'a, D>, (op, time): (&str, SystemTime))
+where
+    D: Database,
+    i64: Encode<'a, D> + Type<D>,
+{
+    builder
+        .push("stored_on ")
+        .push(op)
+        .push(" ")
+        .push_bind(crate::to_secs(time));
+}
+
+pub fn select_id<'a, DB>(
+    table: sql::Ident<'a>,
+    stored_on: Range<SystemTime>,
+) -> QueryBuilder<'a, DB>
+where
+    DB: Database,
+    i64: Encode<'a, DB> + Type<DB>,
+{
+    let mut select = QueryBuilder::new("SELECT id FROM ");
+
+    select
+        .push(table.quote())
+        .push(" WHERE version = 1 AND sequence = 0");
+
+    if !stored_on.unbounded() {
+        select.push(" AND ");
+
+        if matches!(stored_on.from, Unbounded) {
+            and_stored_on(&mut select, le(&stored_on.to));
+        } else if matches!(stored_on.to, Unbounded) {
+            and_stored_on(&mut select, ge(&stored_on.from));
+        } else {
+            select.push('(');
+            and_stored_on(&mut select, ge(&stored_on.from));
+            select.push(" AND ");
+            and_stored_on(&mut select, le(&stored_on.to));
+            select.push(')');
+        }
+    }
+
+    select.push(';');
+    select
+}
 
 pub fn select<'a, ID, DB>(
     table: sql::Ident<'a>,
@@ -42,21 +115,20 @@ where
             select.push("version = ").push_bind(version);
         }
 
-        if let Some(from) = predicate.from {
+        if !predicate.stored_on.unbounded() {
             add_where(&mut select, &mut added);
 
-            if let Some(to) = predicate.to {
-                select
-                    .push("stored_on BETWEEN ")
-                    .push_bind(crate::to_secs(from))
-                    .push(" AND ")
-                    .push_bind(crate::to_secs(to));
+            if matches!(predicate.stored_on.from, Unbounded) {
+                and_stored_on(&mut select, le(&predicate.stored_on.to));
+            } else if matches!(predicate.stored_on.to, Unbounded) {
+                and_stored_on(&mut select, ge(&predicate.stored_on.from));
             } else {
-                select.push("stored_on >= ").push_bind(crate::to_secs(from));
+                select.push('(');
+                and_stored_on(&mut select, ge(&predicate.stored_on.from));
+                select.push(" AND ");
+                and_stored_on(&mut select, le(&predicate.stored_on.to));
+                select.push(')');
             }
-        } else if let Some(to) = predicate.to {
-            add_where(&mut select, &mut added);
-            select.push("stored_on <= ").push_bind(crate::to_secs(to));
         }
 
         let many = predicate.types.len() > 1;
