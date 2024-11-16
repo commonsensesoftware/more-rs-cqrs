@@ -21,4 +21,6 @@ This crate provides the following features:
 
 ## Example
 
-Coming soon. In the meantime, see the [Postgres orders](https://github.com/commonsensesoftware/more-rs-cqrs/examples/postgres-orders) example.
+Coming soon. In the meantime, see the
+[Postgres orders](https://github.com/commonsensesoftware/more-rs-cqrs/tree/main/examples/postgres/orders)
+example.

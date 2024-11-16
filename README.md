@@ -38,4 +38,5 @@ You may be looking for:
 
 ## CQRS in Action
 
-Coming soon. Refer to the [examples](https://github.com/commonsensesoftware/more-rs-cqrs/examples) in the meantime.
+Coming soon. Refer to the [examples](https://github.com/commonsensesoftware/more-rs-cqrs/tree/main/examples) in
+the meantime.

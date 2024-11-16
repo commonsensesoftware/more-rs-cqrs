@@ -1,4 +1,8 @@
-# The Simplest Possible Thing
+# Examples
+
+This directory contains basic examples which highlight core concepts and basic functionality.
+
+## The Simplest Possible Thing
 
 This example shows the simplest possible thing using:
 
@@ -12,5 +16,5 @@ This example shows the simplest possible thing using:
 Run it with:
 
 ```bash
-cargo run --package simplest-possible-thing
+cargo run --example simplest-possible-thing
 ```

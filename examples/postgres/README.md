@@ -1,4 +1,8 @@
-# Orders with PostgreSQL
+# PostgreSQL Examples
+
+This directory contains examples using PostgreSQL as a backing store.
+
+## Orders
 
 This example illustrates using:
 
@@ -13,7 +17,7 @@ This example illustrates using:
 Run it with:
 
 ```bash
-cargo run --package example-postgres-orders
+cargo run --example postgres-orders
 ```
 
 >**Note**: In order to run this example, the Docker engine must be running.

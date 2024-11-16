@@ -8,4 +8,6 @@ cargo add more-cqrs
 
 ## Example
 
-Coming soon. In the meantime, see the [simplest possible thing](https://github.com/commonsensesoftware/more-rs-cqrs/examples/simplest-possible-thing) example.
+Coming soon. In the meantime, see the
+[simplest possible thing](https://github.com/commonsensesoftware/more-rs-cqrs/tree/main/examples/basic/simplest-possible-thing.rs)
+example.
