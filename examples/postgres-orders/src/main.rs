@@ -22,7 +22,11 @@ fn format_date(date: Option<SystemTime>) -> String {
     if let Some(date) = date {
         let utc = date.duration_since(UNIX_EPOCH).unwrap();
         let utc = OffsetDateTime::UNIX_EPOCH + Duration::try_from(utc).unwrap();
-        let local = utc.to_offset(UtcOffset::local_offset_at(utc).unwrap());
+        let local = if let Ok(offset) = UtcOffset::local_offset_at(utc) {
+            utc.to_offset(offset)
+        } else {
+            utc
+        };
         let format = format_description::parse("[month]/[day]/[year] [hour]:[minute]").unwrap();
 
         local.format(&format).unwrap()
@@ -47,7 +51,7 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
                 .in_postgres()
                 .with()
                 .url(url)
-                .mask(SecureMask::ephemeral()) 
+                .mask(SecureMask::ephemeral())
                 .migrations();
         })
         .build_provider()
