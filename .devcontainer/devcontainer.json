@@ -8,15 +8,15 @@
     "customizations": {
         "vscode": {
             "extensions": [
-                "rust-lang.rust-analyzer",
-                "streetsidesoftware.code-spell-checker",
-                "vadimcn.vscode-lldb",
-                "tamasfe.even-better-toml"
+                "streetsidesoftware.code-spell-checker"
             ],
             "settings": {
                 "editor.formatOnSave": true,
                 "editor.formatOnPaste": true
             }
         }
-    }
+    },
+    // unclear why this is necessary, but some combination of configuration
+    // and features results in the folder being write protected otherwise
+    "postCreateCommand": "sudo chown -R vscode:vscode $CARGO_HOME"
 }
