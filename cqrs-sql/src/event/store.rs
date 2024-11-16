@@ -7,17 +7,23 @@ use crate::{
 use async_stream::try_stream;
 use async_trait::async_trait;
 use cqrs::{
-    event::{Event, EventStream, Predicate, Store, StoreError},
+    event::{Event, EventStream, IdStream, Predicate, Store, StoreError},
     message::{Descriptor, Schema, Transcoder},
     snapshot::{self, SnapshotError},
-    Clock, Mask, Version,
+    Clock, Mask, Range, Version,
 };
 use futures::{stream, Stream};
 use sqlx::{
     pool::PoolConnection, ColumnIndex, Connection, Database, Decode, Encode, Executor,
     IntoArguments, Pool, Row, Type,
 };
-use std::{error::Error, fmt::Debug, sync::Arc};
+use std::{
+    error::Error,
+    fmt::Debug,
+    ops::Bound::{Excluded, Included},
+    sync::Arc,
+    time::SystemTime,
+};
 
 fn select_version<T: Debug + Send>(
     snapshot: Option<&Descriptor>,
@@ -31,25 +37,68 @@ fn select_version<T: Debug + Send>(
             snapshot.version.number()
         };
 
-        if let Some(other) = predicate.version {
-            let other = if let Some(mask) = &mask {
-                other.unmask((*mask).clone()).number()
-            } else {
-                other.number()
-            };
+        match predicate.version {
+            Included(other) => {
+                let other = if let Some(mask) = &mask {
+                    other.unmask((*mask).clone()).number()
+                } else {
+                    other.number()
+                };
 
-            if version >= other {
-                Some(version)
-            } else {
-                Some(other)
+                if other >= version {
+                    return Some(other);
+                }
             }
-        } else {
-            Some(version)
+            Excluded(other) => {
+                let other = if let Some(mask) = &mask {
+                    other.unmask((*mask).clone()).number()
+                } else {
+                    other.number()
+                };
+
+                if other > version {
+                    return Some(other);
+                }
+            }
+            _ => {}
         }
+
+        Some(version)
     } else if let Some(mask) = mask {
-        predicate.version.as_ref().map(|v| v.unmask(&mask).number())
+        match predicate.version {
+            Included(version) => Some(version.unmask(&mask).number()),
+            Excluded(version) => Some(version.unmask(&mask).number()),
+            _ => None,
+        }
     } else {
-        predicate.version.as_ref().map(SqlVersion::number)
+        match predicate.version {
+            Included(version) => Some(version.number()),
+            Excluded(version) => Some(version.number()),
+            _ => None,
+        }
+    }
+}
+
+fn distinct_ids<ID, DB>(
+    mut db: PoolConnection<DB>,
+    ident: Ident,
+    stored_on: Range<SystemTime>,
+) -> impl Stream<Item = Result<ID, StoreError<ID>>> + Send + '_
+where
+    ID: Debug + for<'db> Decode<'db, DB> + Send + Sync + Type<DB> + 'static,
+    DB: Database,
+    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
+    for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
+    i64: for<'db> Encode<'db, DB> + Type<DB>,
+    usize: ColumnIndex<<DB as Database>::Row>,
+{
+    try_stream! {
+        let mut query = command::select_id(ident, stored_on);
+        let rows = query.build().fetch(&mut *db);
+
+        for await row in rows {
+            yield row.box_err()?.get::<ID, _>(0);
+        }
     }
 }
 
@@ -188,7 +237,8 @@ where
         + for<'db> Decode<'db, DB>
         + Send
         + Sync
-        + Type<DB>,
+        + Type<DB>
+        + 'static,
     DB: Database,
     for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
@@ -200,6 +250,16 @@ where
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
 {
+    async fn ids(&self, stored_on: Range<SystemTime>) -> IdStream<ID> {
+        let db = match self.pool.acquire().await.box_err() {
+            Ok(db) => db,
+            Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::Unknown(error))])),
+        };
+        let table = self.table.clone();
+
+        Box::pin(distinct_ids(db, table, stored_on))
+    }
+
     async fn load<'a>(&self, predicate: Option<&'a Predicate<'a, ID>>) -> EventStream<'a, ID> {
         let db = match self.pool.acquire().await.box_err() {
             Ok(db) => db,
@@ -227,7 +287,7 @@ where
                 expected_version = expected_version.unmask(&mask);
             }
         }
-        
+
         if expected_version.invalid() {
             println!("invalid version: {:?}", expected_version);
             return Err(StoreError::InvalidVersion);

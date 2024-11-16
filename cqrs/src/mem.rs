@@ -1,5 +1,5 @@
 use crate::{
-    event::{self, Event, EventStream, Predicate, StoreError},
+    event::{self, Event, EventStream, IdStream, Predicate, StoreError},
     message::{Descriptor, Schema, Transcoder},
     snapshot::{self, Snapshot, SnapshotError},
     Clock, Range, Version,
@@ -154,8 +154,8 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
                         }
                     }
                     Excluded(version) => {
-                    if row.version > version {
-                        return Ok(None);
+                        if row.version > version {
+                            return Ok(None);
                         }
                     }
                     _ => {}
@@ -326,12 +326,12 @@ fn select_version<T: Debug + Send>(
             Excluded(other) => {
                 if other > version {
                     return Some(other.number() as usize);
-            }
+                }
             }
             _ => {}
         }
 
-            Some(version.number() as usize)
+        Some(version.number() as usize)
     } else {
         match predicate.version {
             Included(version) => Some(version.number() as usize),
@@ -343,6 +343,15 @@ fn select_version<T: Debug + Send>(
 
 #[async_trait]
 impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for EventStore<T> {
+    async fn ids(&self, _stored_on: Range<SystemTime>) -> IdStream<T> {
+        // TODO: using a date range for an in-memory store requires additional thinking as the setup
+        // would be contrived with a virtual clock or have timestamps very, very close to each other.
+        let table = self.table.read().unwrap();
+        let ids: Vec<_> = table.keys().cloned().map(Ok).collect();
+
+        Box::pin(stream::iter(ids.into_iter()))
+    }
+
     async fn load<'a>(&self, predicate: Option<&'a Predicate<'a, T>>) -> EventStream<'a, T> {
         let snapshot = match self.get_snapshot(predicate).await {
             Ok(snapshot) => snapshot,

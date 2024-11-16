@@ -1,9 +1,9 @@
 use super::domain::{Credited, Debited, Statement};
 use async_trait::async_trait;
 use cqrs::{
-    event::{Event, EventStream, Predicate, Receiver, Store, StoreError},
+    event::{Event, EventStream, IdStream, Predicate, Receiver, Store, StoreError},
     projection::{FilterBuilder, Projector},
-    projectors, Version,
+    projectors, Range, Version,
 };
 use std::{error::Error, sync::Arc, time::SystemTime};
 use std::{fmt::Debug, marker::PhantomData};
@@ -139,6 +139,10 @@ mod projectors {
 
     #[async_trait]
     impl Store<u64> for CustomStore {
+        async fn ids(&self, _stored_on: Range<SystemTime>) -> IdStream<u64> {
+            Box::pin(futures::stream::iter(std::iter::empty()))
+        }
+
         async fn load<'a>(
             &self,
             _predicate: Option<&'a Predicate<'a, u64>>,
