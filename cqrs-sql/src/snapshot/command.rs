@@ -98,9 +98,14 @@ where
         .push_bind(&row.kind)
         .push(", ")
         .push_bind(row.content.as_slice())
-        .push(") ")
-        .push(DB::on_conflict())
-        .push(';');
+        .push(", ");
 
+    if let Some(cid) = &row.correlation_id {
+        insert.push_bind(cid);
+    } else {
+        insert.push("NULL");
+    }
+
+    insert.push(") ").push(DB::on_conflict()).push(';');
     insert
 }

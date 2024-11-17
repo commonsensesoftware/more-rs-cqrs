@@ -106,6 +106,7 @@ fn snapshots_table(table: &Ident, db_type: &str) -> String {
     sql.push_str("taken_on BIGINT NOT NULL, ");
     sql.push_str("type VARCHAR(128) NOT NULL, ");
     sql.push_str("content BLOB NOT NULL, ");
+    sql.push_str("correlation_id VARCHAR(50) DEFAULT NULL, ");
     sql.push_str("PRIMARY KEY (id, version)");
     sql.push_str(");");
 
