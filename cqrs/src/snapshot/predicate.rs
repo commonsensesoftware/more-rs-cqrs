@@ -76,7 +76,7 @@ impl<'a, T: Debug + Send> From<&'a event::Predicate<'a, T>> for Predicate {
     fn from(value: &'a event::Predicate<'a, T>) -> Self {
         PredicateBuilder::new()
             .min_version(value.version)
-            .since(value.stored_on.from.clone())
+            .since(value.stored_on.from)
             .build()
     }
 }
