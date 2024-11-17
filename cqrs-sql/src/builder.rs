@@ -9,6 +9,7 @@ use cqrs::{
 use sqlx::{pool::PoolOptions, Database};
 use std::sync::Arc;
 use thiserror::Error;
+use cfg_if::cfg_if;
 
 type DynSnapshotStore<ID> = dyn cqrs::snapshot::Store<ID>;
 
@@ -161,7 +162,7 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Event, DB> {
         self
     }
 
-    /// Builds and returns a new [`event::SqlStore`].
+    /// Builds and returns a new [event store](event::Store).
     pub fn build(self) -> Result<event::SqlStore<ID, DB>, SqlStoreBuilderError> {
         let url = self.url.ok_or(MissingUrl)?;
         let options = self.options.unwrap_or_default();
@@ -183,8 +184,9 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Event, DB> {
     }
 }
 
+
 impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Snapshot, DB> {
-    /// Builds and returns a new [`snapshot::SqlStore`].
+    /// Builds and returns a new [snapshot store](snapshot::Store).
     pub fn build(self) -> Result<snapshot::SqlStore<ID, DB>, SqlStoreBuilderError> {
         let url = self.url.ok_or(MissingUrl)?;
         let options = self.options.unwrap_or_default();
@@ -202,5 +204,74 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Snapshot, DB> {
             self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
             self.transcoder.unwrap_or_default(),
         ))
+    }
+}
+
+/// Defines the build behavior for a [`SqlStoreBuilder`].
+/// 
+/// # Remarks
+/// 
+/// This trait can be used to build a store which is unable to be built into a standard
+/// [event store](event::SqlStore) or [snapshot store](snapshot::SqlStore), but uses all
+/// of the other common builder functions; for example, SQLite.
+pub trait SqlStoreBuild: Sized {
+    type Store;
+
+    /// Builds and returns a new store.
+    fn build(self) -> Result<Self::Store, SqlStoreBuilderError>;
+}
+
+cfg_if! {
+    if #[cfg(feature = "sqlite")] {
+        use crate::sqlite::{EventStore, SnapshotStore};
+        use sqlx::Sqlite;
+
+        impl<ID> SqlStoreBuild for SqlStoreBuilder<ID, dyn Event, Sqlite> {
+            type Store = EventStore<ID>;
+        
+            fn build(self) -> Result<Self::Store, SqlStoreBuilderError> {
+                let url = self.url.ok_or(MissingUrl)?;
+                let options = self.options.unwrap_or_default();
+                let table = self.table.ok_or(MissingTable)?;
+                let table = if self.schema.is_empty() {
+                    Ident::unqualified(table)
+                } else {
+                    Ident::qualified(self.schema, table)
+                };
+        
+                Ok(Self::Store::new(
+                    table,
+                    options.connect_lazy(&url)?,
+                    self.mask,
+                    self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
+                    self.transcoder.unwrap_or_default(),
+                    self.snapshots,
+                ))
+            }
+        }
+        
+        
+        impl<ID> SqlStoreBuild for SqlStoreBuilder<ID, dyn Snapshot, Sqlite> {
+            type Store = SnapshotStore<ID>;
+            
+            fn build(self) -> Result<Self::Store, SqlStoreBuilderError> {
+                let url = self.url.ok_or(MissingUrl)?;
+                let options = self.options.unwrap_or_default();
+                let table = self.table.ok_or(MissingTable)?;
+                let table = if self.schema.is_empty() {
+                    Ident::unqualified(table)
+                } else {
+                    Ident::qualified(self.schema, table)
+                };
+        
+                Ok(Self::Store::new(
+                    table,
+                    options.connect_lazy(&url)?,
+                    self.mask,
+                    self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
+                    self.transcoder.unwrap_or_default(),
+                ))
+            }
+        }
     }
 }

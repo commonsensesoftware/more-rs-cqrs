@@ -11,7 +11,7 @@ pub mod sql;
 
 mod version;
 
-pub use builder::{SqlStoreBuilder, SqlStoreBuilderError};
+pub use builder::{SqlStoreBuild, SqlStoreBuilder, SqlStoreBuilderError};
 pub(crate) use version::new_version;
 pub use version::{SqlVersion, SqlVersionDisplay, SqlVersionPart};
 

@@ -63,6 +63,7 @@ fn events_table(table: &Ident, db_type: &str) -> String {
     sql.push_str("stored_on INTEGER NOT NULL, ");
     sql.push_str("type TEXT NOT NULL, ");
     sql.push_str("content BLOB NOT NULL, ");
+    sql.push_str("correlation_id TEXT DEFAULT NULL, ");
     sql.push_str("PRIMARY KEY (id, version, sequence)");
     sql.push_str(");");
 

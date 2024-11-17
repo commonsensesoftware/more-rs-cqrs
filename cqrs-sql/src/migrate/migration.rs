@@ -3,8 +3,13 @@ use sqlx::{
     error::BoxDynError,
     migrate::{Migrate, MigrateError, Migration, MigrationSource, Migrator},
     pool::PoolOptions,
-    Database,
+    Database, Pool,
 };
+
+enum Either<DB: Database> {
+    Pool(Pool<DB>),
+    Options(PoolOptions<DB>),
+}
 
 #[derive(Debug)]
 struct Source(Migration);
@@ -19,7 +24,7 @@ impl<'s> MigrationSource<'s> for Source {
 pub struct SqlStoreMigration<DB: Database> {
     migration: Migration,
     url: String,
-    options: PoolOptions<DB>,
+    either: Either<DB>,
 }
 
 impl<DB> SqlStoreMigration<DB>
@@ -42,14 +47,31 @@ where
         Self {
             migration: migration.into(),
             url: url.as_ref().into(),
-            options,
+            either: Either::Options(options),
+        }
+    }
+
+    /// Initializes a new [`SqlStoreMigration`].
+    ///
+    ///  # Argument
+    ///
+    /// * `migration` - the migration to execute
+    /// * `pool` - the [connection pool](Pool) used during the migration
+    pub fn with_pool(migration: impl Into<Migration>, pool: Pool<DB>) -> Self {
+        Self {
+            migration: migration.into(),
+            url: Default::default(),
+            either: Either::Pool(pool),
         }
     }
 
     /// Runs the migration.
     pub async fn run(self) -> Result<(), MigrateError> {
         let migrator = Migrator::new(Source(self.migration)).await?;
-        let pool = self.options.connect(&self.url).await?;
+        let pool = match self.either {
+            Either::Pool(pool) => pool,
+            Either::Options(options) => options.connect(&self.url).await?,
+        };
         migrator.run(&pool).await
     }
 }

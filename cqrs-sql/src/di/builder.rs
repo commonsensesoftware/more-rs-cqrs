@@ -1,60 +1,24 @@
-use super::SqlOptions;
+use super::{merge, DynEventStore, DynSnapshotStore, SqlOptions};
 use crate::{
     event,
     snapshot::{self, Upsert},
-    SqlStoreMigration, SqlStoreMigrator,
 };
+use cfg_if::cfg_if;
 use cqrs::{
     event::Event,
-    message::{Message, Transcoder},
+    message::Transcoder,
     snapshot::Snapshot,
     Aggregate, Clock, Mask, Repository,
 };
 use di::{
-    exactly_one, exactly_one_with_key, singleton_as_self, singleton_with_key, transient_as_self,
-    zero_or_one, zero_or_one_with_key, Injectable, Ref, ServiceCollection,
+    exactly_one, exactly_one_with_key, singleton_as_self, singleton_with_key, zero_or_one,
+    zero_or_one_with_key, Ref, ServiceCollection,
 };
 use options::OptionsSnapshot;
 use sqlx::{
-    migrate::{Migrate, Migration},
-    pool::PoolOptions,
-    ColumnIndex, Database, Decode, Encode, Executor, IntoArguments, Type,
+    pool::PoolOptions, ColumnIndex, Database, Decode, Encode, Executor, IntoArguments, Type,
 };
 use std::{any::type_name, marker::PhantomData, sync::Arc};
-
-type DynEventStore<ID> = dyn cqrs::event::Store<ID>;
-type DynSnapshotStore<ID> = dyn cqrs::snapshot::Store<ID>;
-
-fn merge<ID, M, DB>(
-    mut builder: crate::SqlStoreBuilder<ID, M, DB>,
-    name: &str,
-    url: Option<&str>,
-    cfg_options: Option<&PoolOptions<DB>>,
-    di_options: Option<&Ref<dyn OptionsSnapshot<SqlOptions<DB>>>>,
-) -> crate::SqlStoreBuilder<ID, M, DB>
-where
-    M: Message + ?Sized,
-    DB: Database,
-{
-    if let Some(options) = cfg_options {
-        builder = builder.options(options.clone());
-    } else if let Some(snapshot) = di_options {
-        let db = snapshot.get(Some(name));
-        builder = builder.options(db.options.clone());
-    }
-
-    if let Some(url) = url {
-        builder = builder.url(url);
-    } else if let Some(snapshot) = di_options {
-        let db = snapshot.get(Some(name));
-
-        if !db.url.is_empty() {
-            builder = builder.url(db.url.clone());
-        }
-    }
-
-    builder
-}
 
 /// Represents a builder to configure SQL storage.
 pub struct SqlStoreBuilder<'a, A, DB: Database>
@@ -72,8 +36,8 @@ where
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
 {
-    services: &'a mut ServiceCollection,
-    name: &'static str,
+    pub(crate) services: &'a mut ServiceCollection,
+    pub(crate) name: &'static str,
     _db: PhantomData<DB>,
     _aggregate: PhantomData<A>,
 }
@@ -186,11 +150,11 @@ where
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
 {
-    parent: SqlStoreBuilder<'a, A, DB>,
-    url: Option<String>,
-    options: Option<PoolOptions<DB>>,
-    mask: Option<Box<dyn Mask>>,
-    use_snapshots: bool,
+    pub(crate) parent: SqlStoreBuilder<'a, A, DB>,
+    pub(crate) url: Option<String>,
+    pub(crate) options: Option<PoolOptions<DB>>,
+    pub(crate) mask: Option<Box<dyn Mask>>,
+    pub(crate) use_snapshots: bool,
 }
 
 impl<'a, A, DB> SqlStoreOptionsBuilder<'a, A, DB>
@@ -274,163 +238,6 @@ where
     }
 }
 
-pub struct SqlMigrationsBuilder<'a, A, DB>
-where
-    A: Aggregate + Default + Sync + 'static,
-    A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-    DB: Database + Upsert,
-    <DB as Database>::Connection: Migrate,
-    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
-    for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
-    i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
-    i32: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
-    i64: for<'db> Encode<'db, DB> + Type<DB>,
-    usize: ColumnIndex<<DB as Database>::Row>,
-    String: for<'db> Encode<'db, DB> + Type<DB>,
-    for<'db> &'db str: Decode<'db, DB> + Type<DB>,
-    for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
-    for<'c> &'c event::SqlStore<A::ID, DB>: Into<Migration>,
-    for<'c> &'c snapshot::SqlStore<A::ID, DB>: Into<Migration>,
-{
-    parent: SqlStoreOptionsBuilder<'a, A, DB>,
-}
-
-impl<'a, A, DB> SqlMigrationsBuilder<'a, A, DB>
-where
-    A: Aggregate + Default + Sync + 'static,
-    A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-    DB: Database + Upsert,
-    <DB as Database>::Connection: Migrate,
-    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
-    for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
-    i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
-    i32: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
-    i64: for<'db> Encode<'db, DB> + Type<DB>,
-    usize: ColumnIndex<<DB as Database>::Row>,
-    String: for<'db> Encode<'db, DB> + Type<DB>,
-    for<'db> &'db str: Decode<'db, DB> + Type<DB>,
-    for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
-    for<'c> &'c event::SqlStore<A::ID, DB>: Into<Migration>,
-    for<'c> &'c snapshot::SqlStore<A::ID, DB>: Into<Migration>,
-{
-    fn new(parent: SqlStoreOptionsBuilder<'a, A, DB>) -> Self {
-        parent
-            .parent
-            .services
-            .try_add_to_all(SqlStoreMigrator::<DB>::transient());
-        Self { parent }
-    }
-}
-
-impl<'a, A, DB> Drop for SqlMigrationsBuilder<'a, A, DB>
-where
-    A: Aggregate + Default + Sync + 'static,
-    A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-    DB: Database + Upsert,
-    <DB as Database>::Connection: Migrate,
-    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
-    for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
-    i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
-    i32: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
-    i64: for<'db> Encode<'db, DB> + Type<DB>,
-    usize: ColumnIndex<<DB as Database>::Row>,
-    String: for<'db> Encode<'db, DB> + Type<DB>,
-    for<'db> &'db str: Decode<'db, DB> + Type<DB>,
-    for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
-    for<'c> &'c event::SqlStore<A::ID, DB>: Into<Migration>,
-    for<'c> &'c snapshot::SqlStore<A::ID, DB>: Into<Migration>,
-{
-    fn drop(&mut self) {
-        let name = self.parent.parent.name;
-        let url = self.parent.url.clone();
-        let cfg_options = self.parent.options.clone();
-
-        self.parent.parent.services.add(
-            transient_as_self::<SqlStoreMigration<DB>>()
-                .depends_on(exactly_one::<dyn Clock>())
-                .depends_on(exactly_one::<Transcoder<dyn Event>>())
-                .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<DB>>>())
-                .from(move |sp| {
-                    let di_options = sp.get::<dyn OptionsSnapshot<SqlOptions<DB>>>();
-                    let builder = merge(
-                        event::SqlStore::<A::ID, DB>::builder()
-                            .table(name)
-                            .clock(sp.get_required::<dyn Clock>())
-                            .transcoder(sp.get_required::<Transcoder<dyn Event>>()),
-                        name,
-                        url.as_deref(),
-                        cfg_options.as_ref(),
-                        di_options.as_ref(),
-                    );
-                    let url = builder.url.clone().unwrap_or_default();
-                    let options = builder.options.clone().unwrap_or_default();
-                    let store = builder.build().unwrap();
-                    let migration = SqlStoreMigration::new(&store, url, options);
-
-                    Ref::new(migration)
-                }),
-        );
-
-        if !self.parent.use_snapshots {
-            return;
-        }
-
-        let url = self.parent.url.clone();
-        let cfg_options = self.parent.options.clone();
-
-        self.parent.parent.services.add(
-            transient_as_self::<SqlStoreMigration<DB>>()
-                .depends_on(exactly_one::<dyn Clock>())
-                .depends_on(exactly_one::<Transcoder<dyn Event>>())
-                .depends_on(zero_or_one_with_key::<A, DynSnapshotStore<A::ID>>())
-                .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<DB>>>())
-                .from(move |sp| {
-                    let di_options = sp.get::<dyn OptionsSnapshot<SqlOptions<DB>>>();
-                    let builder = merge(
-                        event::SqlStore::<A::ID, DB>::builder()
-                            .table(name)
-                            .clock(sp.get_required::<dyn Clock>())
-                            .transcoder(sp.get_required::<Transcoder<dyn Event>>()),
-                        name,
-                        url.as_deref(),
-                        cfg_options.as_ref(),
-                        di_options.as_ref(),
-                    );
-                    let url = builder.url.clone().unwrap_or_default();
-                    let options = builder.options.clone().unwrap_or_default();
-                    let store = builder.build().unwrap();
-                    let migration = SqlStoreMigration::new(&store, url, options);
-
-                    Ref::new(migration)
-                }),
-        );
-    }
-}
-
-impl<'a, A, DB> SqlStoreOptionsBuilder<'a, A, DB>
-where
-    A: Aggregate + Default + Sync + 'static,
-    A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-    DB: Database + Upsert,
-    <DB as Database>::Connection: Migrate,
-    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
-    for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
-    i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
-    i32: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
-    i64: for<'db> Encode<'db, DB> + Type<DB>,
-    usize: ColumnIndex<<DB as Database>::Row>,
-    String: for<'db> Encode<'db, DB> + Type<DB>,
-    for<'db> &'db str: Decode<'db, DB> + Type<DB>,
-    for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
-    for<'c> &'c event::SqlStore<A::ID, DB>: Into<Migration>,
-    for<'c> &'c snapshot::SqlStore<A::ID, DB>: Into<Migration>,
-{
-    /// Configures the database to use migrations.
-    pub fn migrations(self) -> SqlMigrationsBuilder<'a, A, DB> {
-        SqlMigrationsBuilder::new(self)
-    }
-}
-
 impl<'a, A, DB> SqlStoreOptionsBuilder<'a, A, DB>
 where
     A: Aggregate + Default + Sync + 'static,
@@ -479,7 +286,7 @@ where
                     if let Some(mask) = mask.clone().or_else(|| sp.get::<dyn Mask>()) {
                         builder = builder.mask(mask);
                     }
-                    
+
                     Ref::new(builder.build().unwrap())
                 }),
         );
@@ -540,5 +347,36 @@ where
                     Ref::new(builder.build().unwrap())
                 }),
         );
+    }
+}
+
+cfg_if! {
+    if #[cfg(feature = "migrate")] {
+        use super::SqlMigrationsBuilder;
+        use sqlx::migrate::{Migrate, Migration};
+
+        impl<'a, A, DB> SqlStoreOptionsBuilder<'a, A, DB>
+        where
+            A: Aggregate + Default + Sync + 'static,
+            A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
+            DB: Database + Upsert,
+            <DB as Database>::Connection: Migrate,
+            for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
+            for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
+            i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
+            i32: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
+            i64: for<'db> Encode<'db, DB> + Type<DB>,
+            usize: ColumnIndex<<DB as Database>::Row>,
+            String: for<'db> Encode<'db, DB> + Type<DB>,
+            for<'db> &'db str: Decode<'db, DB> + Type<DB>,
+            for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
+            for<'c> &'c event::SqlStore<A::ID, DB>: Into<Migration>,
+            for<'c> &'c snapshot::SqlStore<A::ID, DB>: Into<Migration>,
+        {
+            /// Configures the database to use migrations.
+            pub fn migrations(self) -> SqlMigrationsBuilder<'a, A, DB> {
+                SqlMigrationsBuilder::new(self)
+            }
+        }
     }
 }

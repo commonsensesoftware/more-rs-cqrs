@@ -1,7 +1,12 @@
-use crate::{event, snapshot};
-use sqlx::Sqlite;
+mod event_command;
+mod event_store;
+mod snapshot_command;
+mod snapshot_store;
 
-impl snapshot::Upsert for Sqlite {
+pub use event_store::EventStore;
+pub use snapshot_store::SnapshotStore;
+
+impl crate::snapshot::Upsert for sqlx::Sqlite {
     fn on_conflict() -> &'static str {
         concat!(
             "ON CONFLICT (id) DO UPDATE SET ",
@@ -12,14 +17,8 @@ impl snapshot::Upsert for Sqlite {
     }
 }
 
-/// Represents a SQLite [event store](event::SqlStore).
-pub type EventStore<ID> = event::SqlStore<ID, Sqlite>;
-
-/// Represents a SQLite [snapshot store](snapshot::SqlStore).
-pub type SnapshotStore<ID> = snapshot::SqlStore<ID, Sqlite>;
-
 cfg_if::cfg_if! {
-    if #[cfg(feature = "sqlite")] {
+    if #[cfg(feature = "migrate")] {
         mod migration;
         pub use migration::SqliteMigrator;
     }
