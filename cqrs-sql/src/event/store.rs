@@ -1,7 +1,7 @@
 use super::command;
 use crate::{
     new_version,
-    sql::{Context, Ident, IntoRows},
+    sql::{self, Context, Ident, IntoRows},
     BoxErr, SqlStoreBuilder, SqlVersion, SqlVersionPart,
 };
 use async_stream::try_stream;
@@ -160,8 +160,27 @@ where
     }
 }
 
+/// Defines the possible delete operation behaviors.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Delete {
+    /// Indicates that delete operations are unsupported.
+    Unsupported,
+
+    /// Indicates that delete operations are supported.
+    Supported,
+}
+
+impl Delete {
+    /// Gets a value indicating whether delete is supported.
+    #[inline]
+    pub fn supported(&self) -> bool {
+        matches!(self, Delete::Supported)
+    }
+}
+
 /// Represents a SQL [event store](Store).
 pub struct SqlStore<ID, DB: Database> {
+    delete: Delete,
     pub(crate) table: Ident<'static>,
     pub(crate) pool: Pool<DB>,
     mask: Option<Arc<dyn Mask>>,
@@ -180,6 +199,7 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
     /// * `mask` - the optional [mask](Mask) used to obfuscate [versions](Version)
     /// * `clock` - the associated [clock](Clock)
     /// * `transcoder` - the associated [transcoder](Transcoder)
+    /// * `delete` - indicates whether [deletes](Delete) are supported
     pub fn new(
         table: Ident<'static>,
         pool: Pool<DB>,
@@ -187,8 +207,10 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
         clock: Arc<dyn Clock>,
         transcoder: Arc<Transcoder<dyn Event>>,
         snapshots: Option<Arc<dyn snapshot::Store<ID>>>,
+        delete: Delete,
     ) -> Self {
         Self {
+            delete,
             table,
             pool,
             mask,
@@ -313,6 +335,12 @@ where
             let mut tx = db.begin().await.box_err()?;
             let second = second?;
 
+            if self.delete.supported() {
+                if let Some(previous) = first.previous() {
+                    command::ensure_not_deleted(&self.table, &previous, &mut tx).await?;
+                }
+            }
+
             command::insert_transacted(&self.table, &first, &mut tx).await?;
             command::insert_transacted(&self.table, &second, &mut tx).await?;
 
@@ -327,17 +355,32 @@ where
 
             tx.commit().await.box_err()?;
         } else {
-            let mut insert = command::insert(&self.table, &first);
+            let mut execute = true;
 
-            if let Err(error) = insert.build().execute(&mut *db).await {
-                if let sqlx::Error::Database(error) = &error {
-                    if error.is_unique_violation() {
-                        return Err(StoreError::Conflict(id.clone(), first.version as u32));
-                    }
+            if self.delete.supported() {
+                if let Some(previous) = first.previous() {
+                    let mut tx = db.begin().await.box_err()?;
+
+                    command::ensure_not_deleted(&self.table, &previous, &mut tx).await?;
+                    command::insert_transacted(&self.table, &first, &mut tx).await?;
+                    tx.commit().await.box_err()?;
+                    execute = false;
                 }
-                return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
-            } else {
-                versions.push(new_version(first.version, first.sequence));
+            }
+
+            if execute {
+                let mut insert = command::insert(&self.table, &first);
+
+                if let Err(error) = insert.build().execute(&mut *db).await {
+                    if let sqlx::Error::Database(error) = &error {
+                        if error.is_unique_violation() {
+                            return Err(StoreError::Conflict(id.clone(), first.version as u32));
+                        }
+                    }
+                    return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
+                } else {
+                    versions.push(new_version(first.version, first.sequence));
+                }
             }
         }
 
@@ -351,6 +394,24 @@ where
             }
         }
 
+        Ok(())
+    }
+
+    async fn delete(&self, id: &ID) -> Result<(), StoreError<ID>> {
+        if !self.delete.supported() {
+            return Err(StoreError::Unsupported);
+        }
+
+        let mut db = self.pool.acquire().await.box_err()?;
+        let mut tx = db.begin().await.box_err()?;
+        let mut delete = sql::command::delete(&self.table, id);
+        let _ = delete.build().execute(&mut *tx).await.box_err()?;
+
+        if let Some(snapshots) = &self.snapshots {
+            snapshots.delete(id).await?;
+        }
+
+        tx.commit().await.box_err()?;
         Ok(())
     }
 }

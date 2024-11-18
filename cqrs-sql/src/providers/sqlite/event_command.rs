@@ -38,10 +38,7 @@ fn and_stored_on(builder: &mut QueryBuilder<Sqlite>, (op, time): (&str, SystemTi
         .push_bind(crate::to_secs(time));
 }
 
-pub fn select_id(
-    table: sql::Ident,
-    stored_on: Range<SystemTime>,
-) -> QueryBuilder<Sqlite> {
+pub fn select_id(table: sql::Ident, stored_on: Range<SystemTime>) -> QueryBuilder<Sqlite> {
     let mut select = QueryBuilder::new("SELECT id FROM ");
 
     select
@@ -217,4 +214,44 @@ where
     }
 
     Ok(())
+}
+
+pub async fn ensure_not_deleted<'a, ID>(
+    table: &'a sql::Ident<'a>,
+    previous: &'a sql::Row<ID>,
+    tx: &'a mut Transaction<'_, Sqlite>,
+) -> Result<(), StoreError<ID>>
+where
+    ID: Clone + Debug + for<'db> Encode<'db, Sqlite> + Send + Type<Sqlite>,
+{
+    let mut insert = insert::<ID>(table, previous);
+
+    if let Err(error) = insert.build().execute(&mut **tx).await {
+        if let sqlx::Error::Database(error) = &error {
+            if error.is_unique_violation() {
+                // the events before now still exist; e.g. not deleted
+                return Ok(());
+            }
+        }
+        return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
+    }
+
+    // if the insert succeeds, then this means all of the events must have been
+    // deleted some time before the current save
+    Err(StoreError::Deleted(previous.id.clone()))
+}
+
+pub fn delete<'a, ID>(table: &'a sql::Ident<'a>, id: &'a ID) -> QueryBuilder<'a, Sqlite>
+where
+    ID: Encode<'a, Sqlite> + Send + Type<Sqlite> + 'a,
+{
+    let mut delete = QueryBuilder::new("DELETE FROM ");
+
+    delete
+        .push(table.quote())
+        .push(" WHERE id = ")
+        .push_bind(id)
+        .push(';');
+
+    delete
 }

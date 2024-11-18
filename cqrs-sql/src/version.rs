@@ -116,7 +116,7 @@ impl SqlVersion for Version {
     fn increment(&self, part: SqlVersionPart) -> Self {
         match part {
             SqlVersionPart::Version => {
-                Self::new(encode(self.number().saturating_add(1), self.sequence()))
+                Self::new(encode(self.number().saturating_add(1), 0))
             }
             SqlVersionPart::Sequence => {
                 Self::new(encode(self.number(), self.sequence().saturating_add(1)))

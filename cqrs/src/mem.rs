@@ -195,6 +195,11 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
 
         Ok(())
     }
+
+    async fn delete(&self, id: &T) -> Result<(), SnapshotError> {
+        let _ = self.table.write().unwrap().remove(id);
+        Ok(())
+    }
 }
 
 /// Represents an in-memory [event store](event::Store).
@@ -460,6 +465,8 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
             if count > 0 && count > expected_version.number() as usize {
                 return Err(StoreError::Conflict(id.clone(), expected_version.number()));
             }
+        } else if expected_version.number() > 1 {
+            return Err(StoreError::Deleted(id.clone()));
         }
 
         let mut version = expected_version.next_version();
@@ -490,6 +497,15 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
             .or_insert(rows);
         tx.commit();
 
+        Ok(())
+    }
+
+    async fn delete(&self, id: &T) -> Result<(), StoreError<T>> {
+        if let Some(snapshots) = &self.snapshots {
+            snapshots.delete(id).await?;
+        }
+
+        let _ = self.table.write().unwrap().remove(id);        
         Ok(())
     }
 }

@@ -134,6 +134,7 @@ where
     url: Option<String>,
     options: Option<PoolOptions<Sqlite>>,
     mask: Option<Box<dyn Mask>>,
+    allow_delete: bool,
     use_snapshots: bool,
 }
 
@@ -149,6 +150,7 @@ where
             url: None,
             options: None,
             mask: None,
+            allow_delete: false,
             use_snapshots: false,
         }
     }
@@ -205,6 +207,12 @@ where
     /// * `value` - the [mask](Mask) used to obfuscate [versions](cqrs::Version)
     pub fn mask<V: Mask + 'static>(mut self, value: V) -> Self {
         self.mask = Some(Box::new(value));
+        self
+    }
+
+    // Enables support for deletes, which is unsupported by default.
+    pub fn deletes(mut self) -> Self {
+        self.allow_delete = true;
         self
     }
 }
@@ -277,6 +285,7 @@ where
         let url = self.url.clone();
         let cfg_options = self.options.clone();
         let mask = self.mask.take().map(Arc::from);
+        let allow_delete = self.allow_delete;
 
         self.parent
             .services
@@ -306,6 +315,10 @@ where
 
                         if let Some(mask) = mask.clone().or_else(|| sp.get::<dyn Mask>()) {
                             builder = builder.mask(mask);
+                        }
+
+                        if allow_delete {
+                            builder = builder.with_deletes();
                         }
 
                         Ref::new(SqlStoreBuild::build(builder).unwrap())

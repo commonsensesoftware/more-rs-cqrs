@@ -33,6 +33,25 @@ pub struct Row<ID> {
     pub correlation_id: Option<String>,
 }
 
+impl<ID: Clone> Row<ID> {
+    pub fn previous(&self) -> Option<Self> {
+        if self.version == 1 {
+            None
+        } else {
+            Some(Self {
+                id: self.id.clone(),
+                version: self.version - 1,
+                sequence: 0,
+                stored_on: self.stored_on,
+                kind: self.kind.clone(),
+                revision: self.revision,
+                content: Default::default(),
+                correlation_id: None,
+            })
+        }
+    }
+}
+
 /// Represents the context used while transforming events into rows.
 pub struct Context<'a, ID, M: ?Sized + Sync> {
     pub id: ID,

@@ -247,3 +247,36 @@ where
 
     Ok(())
 }
+
+pub async fn ensure_not_deleted<'a, ID, DB>(
+    table: &'a sql::Ident<'a>,
+    previous: &'a sql::Row<ID>,
+    tx: &'a mut Transaction<'_, DB>,
+) -> Result<(), StoreError<ID>>
+where
+    DB: Database,
+    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
+    for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
+    ID: Clone + Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
+    i16: for<'db> Encode<'db, DB> + Type<DB>,
+    i32: for<'db> Encode<'db, DB> + Type<DB>,
+    i64: for<'db> Encode<'db, DB> + Type<DB>,
+    String: for<'db> Encode<'db, DB> + Type<DB>,
+    for<'db> &'db [u8]: Encode<'db, DB> + Type<DB>,
+{
+    let mut insert = insert::<ID, DB>(table, previous);
+
+    if let Err(error) = insert.build().execute(&mut **tx).await {
+        if let sqlx::Error::Database(error) = &error {
+            if error.is_unique_violation() {
+                // the events before now still exist; e.g. not deleted
+                return Ok(());
+            }
+        }
+        return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
+    }
+
+    // if the insert succeeds, then this means all of the events must have been
+    // deleted some time before the current save
+    Err(StoreError::Deleted(previous.id.clone()))
+}

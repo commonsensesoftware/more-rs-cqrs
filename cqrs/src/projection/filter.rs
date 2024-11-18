@@ -20,7 +20,7 @@ impl<'a, T: Debug + Send> Filter<'a, T> {
     pub fn new(id: Option<&'a T>) -> Self {
         Self {
             id,
-            stored_on: Range::none(),
+            stored_on: Range::all(),
         }
     }
 

@@ -75,4 +75,11 @@ pub trait Store<T: Debug + Send = Uuid>: Send + Sync {
     ///
     /// * `snapshot` - the [snapshot](Snapshot) to save
     async fn save(&self, id: &T, snapshot: Box<dyn Snapshot>) -> Result<(), SnapshotError>;
+
+    /// Deletes the snapshots for the specified identifier.
+    /// 
+    /// # Arguments
+    ///
+    /// * `id` - the identifier of the snapshots to delete
+    async fn delete(&self, id: &T) -> Result<(), SnapshotError>;
 }

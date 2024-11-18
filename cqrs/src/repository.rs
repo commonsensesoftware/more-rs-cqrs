@@ -36,6 +36,10 @@ pub enum RepositoryError<T: Debug + Send> {
     #[error("the specified version is invalid")]
     InvalidVersion,
 
+    /// Indicates that an operation is unsupported; for example, deletion.
+    #[error("the requested operation is unsupported")]
+    Unsupported,
+
     /// Indicates an unknown [error](Error).
     #[error(transparent)]
     Unknown(#[from] Box<dyn Error + Send>),
@@ -45,8 +49,10 @@ impl<T: Debug + Send + 'static> From<StoreError<T>> for RepositoryError<T> {
     fn from(value: StoreError<T>) -> Self {
         match value {
             StoreError::Conflict(id, version) => Self::Conflict(id, version),
+            StoreError::Deleted(id) => Self::NotFound(id),
             StoreError::InvalidEncoding(error) => Self::InvalidEncoding(error),
             StoreError::InvalidVersion => Self::InvalidVersion,
+            StoreError::Unsupported => Self::Unsupported,
             StoreError::Unknown(error) => Self::Unknown(error),
             _ => Self::Unknown(Box::new(value)),
         }
@@ -139,6 +145,25 @@ where
         changes.accept();
 
         Ok(())
+    }
+
+    /// Deletes the [aggregate](Aggregate) with the specified identifier.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - the aggregate identifier
+    /// 
+    /// # Remarks
+    /// 
+    /// In general, an aggregate should never be deleted; however, there is a use case for an aggregate
+    /// that is tombstoned to be permanently deleted. A valid and safe scenario might be if the underlying
+    /// events have been copied to different, cheaper, colder, but long-live [store](Store).
+    /// 
+    /// A [store](Store) is not required to support deletes and the assumed expectation should be that a
+    /// [store](Store) does not support deletes. If a [store](Store) returns [`StoreError::Unsupported`],
+    /// it will bubble up as [`RepositoryError::Unsupported`].
+    pub async fn delete(&self, id: &A::ID) -> Result<(), RepositoryError<A::ID>> {
+        Ok(self.store.delete(id).await?)
     }
 }
 

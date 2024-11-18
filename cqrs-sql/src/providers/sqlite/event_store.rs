@@ -1,8 +1,6 @@
 use super::event_command as command;
 use crate::{
-    new_version,
-    sql::{Context, Ident, IntoRows},
-    BoxErr, SqlStoreBuilder, SqlVersion, SqlVersionPart,
+    event::Delete, new_version, sql::{Context, Ident, IntoRows}, BoxErr, SqlStoreBuilder, SqlVersion, SqlVersionPart
 };
 use async_stream::try_stream;
 use async_trait::async_trait;
@@ -151,6 +149,7 @@ where
 
 /// Represents a SQLite [event store](Store).
 pub struct EventStore<ID> {
+    delete: Delete,
     pub(crate) table: Ident<'static>,
     pub(crate) pool: Pool<Sqlite>,
     mask: Option<Arc<dyn Mask>>,
@@ -169,6 +168,7 @@ impl<ID> EventStore<ID> {
     /// * `mask` - the optional [mask](Mask) used to obfuscate [versions](Version)
     /// * `clock` - the associated [clock](Clock)
     /// * `transcoder` - the associated [transcoder](Transcoder)
+    /// * `delete` - indicates whether [deletes](Delete) are supported
     pub fn new(
         table: Ident<'static>,
         pool: Pool<Sqlite>,
@@ -176,8 +176,10 @@ impl<ID> EventStore<ID> {
         clock: Arc<dyn Clock>,
         transcoder: Arc<Transcoder<dyn Event>>,
         snapshots: Option<Arc<dyn snapshot::Store<ID>>>,
+        delete: Delete,
     ) -> Self {
         Self {
+            delete,
             table,
             pool,
             mask,
@@ -288,6 +290,12 @@ where
             let mut tx = db.begin().await.box_err()?;
             let second = second?;
 
+            if self.delete.supported() {
+                if let Some(previous) = first.previous() {
+                    command::ensure_not_deleted(&self.table, &previous, &mut tx).await?;
+                }
+            }
+
             command::insert_transacted(&self.table, &first, &mut tx).await?;
             command::insert_transacted(&self.table, &second, &mut tx).await?;
 
@@ -302,17 +310,32 @@ where
 
             tx.commit().await.box_err()?;
         } else {
-            let mut insert = command::insert(&self.table, &first);
+            let mut execute = true;
 
-            if let Err(error) = insert.build().execute(&mut *db).await {
-                if let sqlx::Error::Database(error) = &error {
-                    if error.is_unique_violation() {
-                        return Err(StoreError::Conflict(id.clone(), first.version as u32));
-                    }
+            if self.delete.supported() {
+                if let Some(previous) = first.previous() {
+                    let mut tx = db.begin().await.box_err()?;
+
+                    command::ensure_not_deleted(&self.table, &previous, &mut tx).await?;
+                    command::insert_transacted(&self.table, &first, &mut tx).await?;
+                    tx.commit().await.box_err()?;
+                    execute = false;
                 }
-                return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
-            } else {
-                versions.push(new_version(first.version, first.sequence));
+            }
+
+            if execute {
+                let mut insert = command::insert(&self.table, &first);
+    
+                if let Err(error) = insert.build().execute(&mut *db).await {
+                    if let sqlx::Error::Database(error) = &error {
+                        if error.is_unique_violation() {
+                            return Err(StoreError::Conflict(id.clone(), first.version as u32));
+                        }
+                    }
+                    return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
+                } else {
+                    versions.push(new_version(first.version, first.sequence));
+                }
             }
         }
 
@@ -326,6 +349,20 @@ where
             }
         }
 
+        Ok(())
+    }
+
+    async fn delete(&self, id: &ID) -> Result<(), StoreError<ID>> {
+        let mut db = self.pool.acquire().await.box_err()?;
+        let mut tx = db.begin().await.box_err()?;
+        let mut delete = command::delete(&self.table, id);
+        let _ = delete.build().execute(&mut *tx).await.box_err()?;
+        
+        if let Some(snapshots) = &self.snapshots {
+            snapshots.delete(id).await?;
+        }
+
+        tx.commit().await.box_err()?;
         Ok(())
     }
 }

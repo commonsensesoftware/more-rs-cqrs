@@ -11,7 +11,7 @@ use cqrs::{
     Clock, Mask,
 };
 use futures::StreamExt;
-use sqlx::{ColumnIndex, Database, Decode, Encode, Executor, IntoArguments, Pool, Row, Type};
+use sqlx::{ColumnIndex, Connection, Database, Decode, Encode, Executor, IntoArguments, Pool, Row, Type};
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
 /// Represents a SQL [snapshot store](Store).
@@ -162,6 +162,15 @@ where
         let mut insert = command::insert(&self.table, &row);
         let _ = insert.build().execute(&mut *db).await.box_err()?;
 
+        Ok(())
+    }
+
+    async fn delete(&self, id: &ID) -> Result<(), SnapshotError> {
+        let mut db = self.pool.acquire().await.box_err()?;
+        let mut tx = db.begin().await.box_err()?;
+        let mut delete = sql::command::delete(&self.table, id);
+        let _ = delete.build().execute(&mut *tx).await.box_err()?;
+        tx.commit().await.box_err()?;
         Ok(())
     }
 }

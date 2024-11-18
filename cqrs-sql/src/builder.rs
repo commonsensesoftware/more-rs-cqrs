@@ -1,5 +1,10 @@
 use self::SqlStoreBuilderError::*;
-use crate::{event, snapshot, sql::Ident};
+use crate::{
+    event::{self, Delete},
+    snapshot,
+    sql::Ident,
+};
+use cfg_if::cfg_if;
 use cqrs::{
     event::Event,
     message::{Message, Transcoder},
@@ -9,7 +14,6 @@ use cqrs::{
 use sqlx::{pool::PoolOptions, Database};
 use std::sync::Arc;
 use thiserror::Error;
-use cfg_if::cfg_if;
 
 type DynSnapshotStore<ID> = dyn cqrs::snapshot::Store<ID>;
 
@@ -37,6 +41,7 @@ where
 {
     schema: &'static str,
     table: Option<&'static str>,
+    delete: Delete,
     pub(crate) url: Option<String>,
     pub(crate) options: Option<PoolOptions<DB>>,
     mask: Option<Arc<dyn Mask>>,
@@ -50,6 +55,7 @@ impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Event, DB> {
         Self {
             schema: "events",
             table: None,
+            delete: Delete::Unsupported,
             url: None,
             options: None,
             mask: None,
@@ -65,6 +71,7 @@ impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Snapshot, DB> {
         Self {
             schema: "snapshots",
             table: None,
+            delete: Delete::Unsupported,
             url: None,
             options: None,
             mask: None,
@@ -152,6 +159,12 @@ where
 }
 
 impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Event, DB> {
+    /// Configures the store to support deletes.
+    pub fn with_deletes(mut self) -> Self {
+        self.delete = Delete::Supported;
+        self
+    }
+
     /// Configures the snapshots associated with the store.
     ///
     /// # Arguments
@@ -180,10 +193,10 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Event, DB> {
             self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
             self.transcoder.unwrap_or_default(),
             self.snapshots,
+            self.delete,
         ))
     }
 }
-
 
 impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Snapshot, DB> {
     /// Builds and returns a new [snapshot store](snapshot::Store).
@@ -208,9 +221,9 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Snapshot, DB> {
 }
 
 /// Defines the build behavior for a [`SqlStoreBuilder`].
-/// 
+///
 /// # Remarks
-/// 
+///
 /// This trait can be used to build a store which is unable to be built into a standard
 /// [event store](event::SqlStore) or [snapshot store](snapshot::SqlStore), but uses all
 /// of the other common builder functions; for example, SQLite.
@@ -228,7 +241,7 @@ cfg_if! {
 
         impl<ID> SqlStoreBuild for SqlStoreBuilder<ID, dyn Event, Sqlite> {
             type Store = EventStore<ID>;
-        
+
             fn build(self) -> Result<Self::Store, SqlStoreBuilderError> {
                 let url = self.url.ok_or(MissingUrl)?;
                 let options = self.options.unwrap_or_default();
@@ -238,7 +251,7 @@ cfg_if! {
                 } else {
                     Ident::qualified(self.schema, table)
                 };
-        
+
                 Ok(Self::Store::new(
                     table,
                     options.connect_lazy(&url)?,
@@ -246,14 +259,15 @@ cfg_if! {
                     self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
                     self.transcoder.unwrap_or_default(),
                     self.snapshots,
+                    self.delete,
                 ))
             }
         }
-        
-        
+
+
         impl<ID> SqlStoreBuild for SqlStoreBuilder<ID, dyn Snapshot, Sqlite> {
             type Store = SnapshotStore<ID>;
-            
+
             fn build(self) -> Result<Self::Store, SqlStoreBuilderError> {
                 let url = self.url.ok_or(MissingUrl)?;
                 let options = self.options.unwrap_or_default();
@@ -263,7 +277,7 @@ cfg_if! {
                 } else {
                     Ident::qualified(self.schema, table)
                 };
-        
+
                 Ok(Self::Store::new(
                     table,
                     options.connect_lazy(&url)?,

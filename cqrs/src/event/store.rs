@@ -49,6 +49,26 @@ pub trait Store<T: Debug + Send = Uuid>: Send + Sync {
         events: &mut [Box<dyn Event>],
         expected_version: Version,
     ) -> Result<(), StoreError<T>>;
+
+    /// Deletes a collection of events.
+    /// 
+    /// # Arguments
+    ///
+    /// * `id` - the identifier of the events to delete
+    /// 
+    /// # Remarks
+    /// 
+    /// In general, events should never be deleted; however, there is a use case for events that are
+    /// tombstoned to be permanently deleted from a store. A valid and safe scenario might be if the
+    /// events have been copied to different, cheaper, colder, but long-live store.
+    /// 
+    /// A store is not required to support deletes and the assumed expectation should be that a store
+    /// does not support deletes. A store that does support deletes is expected to prevent saving new
+    /// events that occur after the delete.
+    #[allow(unused_variables)]
+    async fn delete(&self, id: &T) -> Result<(), StoreError<T>> {
+        Err(StoreError::Unsupported)
+    }
 }
 
 /// Represents the possible store errors.
@@ -57,6 +77,10 @@ pub enum StoreError<T: Debug + Send> {
     /// Indicates a concurrency conflict occurred.
     #[error("the item with identifier {0:?} and version {1:?} already exists")]
     Conflict(T, u32),
+
+    /// Indicates the specified identifier has been deleted.
+    #[error("the item with identifier {0:?} has been deleted")]
+    Deleted(T),
 
     /// Indicates an invalid store [encoding](Encoding).
     #[error(transparent)]
@@ -77,6 +101,10 @@ pub enum StoreError<T: Debug + Send> {
     /// Indicates that a batch size is too large and provides maximum size allowed.
     #[error("the batch to store is greater than {0}, which is the maximum size allowed")]
     BatchTooLarge(u8),
+
+    /// Indicates that an operation is unsupported; for example, deletion.
+    #[error("the requested operation is unsupported")]
+    Unsupported,
 
     /// Indicates an unknown store [error](Error).
     #[error(transparent)]
