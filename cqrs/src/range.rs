@@ -92,7 +92,7 @@ impl<T: Clone> Range<T> {
 
 impl<T> Range<T> {
     /// Initializes a new, unbounded [`Range`].
-    pub fn none() -> Self {
+    pub fn all() -> Self {
         Self::default()
     }
 
