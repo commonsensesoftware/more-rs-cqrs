@@ -266,7 +266,6 @@ where
         }
 
         if expected_version.invalid() {
-            println!("invalid version: {:?}", expected_version);
             return Err(StoreError::InvalidVersion);
         }
 

@@ -102,7 +102,7 @@ pub struct SqlVersionDisplay {
 
 impl SqlVersion for Version {
     fn max() -> Self {
-        Self::new((u32::MAX as u64) >> 8)
+        Self::new(u32::MAX as u64)
     }
 
     fn number(&self) -> i32 {
