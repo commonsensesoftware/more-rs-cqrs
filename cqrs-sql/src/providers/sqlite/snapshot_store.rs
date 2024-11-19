@@ -1,13 +1,14 @@
 use super::snapshot_command as command;
 use crate::{
     new_version,
+    snapshot::Prune,
     sql::{self, Ident},
     BoxErr, SqlStoreBuilder, SqlVersion,
 };
 use async_trait::async_trait;
 use cqrs::{
     message::{Descriptor, Schema, Transcoder},
-    snapshot::{Predicate, Snapshot, SnapshotError, Store},
+    snapshot::{Predicate, Retention, Snapshot, SnapshotError, Store},
     Clock, Mask,
 };
 use futures::StreamExt;
@@ -22,6 +23,7 @@ pub struct SnapshotStore<ID> {
     mask: Option<Arc<dyn Mask>>,
     clock: Arc<dyn Clock>,
     transcoder: Arc<Transcoder<dyn Snapshot>>,
+    retention: Retention,
 }
 
 impl<ID> SnapshotStore<ID> {
@@ -34,12 +36,14 @@ impl<ID> SnapshotStore<ID> {
     /// * `mask` - the [mask](Mask) used to obfuscate [versions](Version)
     /// * `clock` - the associated [clock](Clock)
     /// * `transcoder` - the associated [transcoder](Transcoder)
+    /// * `retention` - the [retention](Retention) policy
     pub fn new(
         table: Ident<'static>,
         pool: Pool<Sqlite>,
         mask: Option<Arc<dyn Mask>>,
         clock: Arc<dyn Clock>,
         transcoder: Arc<Transcoder<dyn Snapshot>>,
+        retention: Retention,
     ) -> Self {
         Self {
             _id: PhantomData,
@@ -48,6 +52,7 @@ impl<ID> SnapshotStore<ID> {
             mask,
             clock,
             transcoder,
+            retention,
         }
     }
 
@@ -149,8 +154,18 @@ where
             correlation_id: None,
         };
         let mut db = self.pool.acquire().await.box_err()?;
-        let mut insert = command::insert(&self.table, &row);
-        let _ = insert.build().execute(&mut *db).await.box_err()?;
+
+        if self.retention.all() {
+            let mut insert = command::insert(&self.table, &row);
+            let _ = insert.build().execute(&mut *db).await.box_err()?;
+        } else {
+            let mut tx = db.begin().await.box_err()?;
+            let mut delete = Sqlite::prune(&self.table, id, &*self.clock, &self.retention);
+            let mut insert = command::insert(&self.table, &row);
+            let _ = delete.build().execute(&mut *tx).await.box_err()?;
+            let _ = insert.build().execute(&mut *tx).await.box_err()?;
+            tx.commit().await.box_err()?;
+        }
 
         Ok(())
     }

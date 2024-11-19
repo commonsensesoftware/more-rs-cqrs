@@ -1,11 +1,14 @@
 use super::{merge, DynEventStore, DynSnapshotStore, SqlOptions};
 use crate::{
     event,
-    snapshot::{self, Upsert},
+    snapshot::{self, Prune, Upsert},
 };
 use cfg_if::cfg_if;
 use cqrs::{
-    event::Event, message::Transcoder, snapshot::Snapshot, Aggregate, Clock, Mask, Repository,
+    event::Event,
+    message::Transcoder,
+    snapshot::{Retention, Snapshot},
+    Aggregate, Clock, Mask, Repository,
 };
 use di::{
     exactly_one, exactly_one_with_key, singleton_as_self, singleton_with_key, zero_or_one,
@@ -247,7 +250,7 @@ impl<'a, A, DB> SqlStoreOptionsBuilder<'a, A, DB>
 where
     A: Aggregate + Default + Sync + 'static,
     A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-    DB: Database + Upsert,
+    DB: Database + for<'db> Prune<'db, A::ID, DB> + Upsert,
     for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
@@ -264,7 +267,22 @@ where
     ///
     /// In order to use a snapshot store which does not use SQL, a keyed service must be registered in the
     /// [`ServiceCollection`] for a [`cqrs::snapshot::Store`] using the type of [`Aggregate`] as the key.
-    pub fn snapshots(mut self) -> Self {
+    #[inline]
+    pub fn snapshots(self) -> Self {
+        self.snapshots_with(Retention::default())
+    }
+
+    /// Configures SQL storage with SQL-based snapshots.
+    ///
+    /// # Arguments
+    ///
+    /// * `retention` - the [retention](Retention) policy applied to snapshots
+    ///
+    /// # Remarks
+    ///
+    /// In order to use a snapshot store which does not use SQL, a keyed service must be registered in the
+    /// [`ServiceCollection`] for a [`cqrs::snapshot::Store`] using the type of [`Aggregate`] as the key.
+    pub fn snapshots_with(mut self, retention: Retention) -> Self {
         let name = self.parent.name;
         let url = self.url.clone();
         let cfg_options = self.options.clone();
@@ -281,7 +299,8 @@ where
                     let mut builder = merge(
                         snapshot::SqlStore::<A::ID, DB>::builder()
                             .table(name)
-                            .transcoder(sp.get_required::<Transcoder<dyn Snapshot>>()),
+                            .transcoder(sp.get_required::<Transcoder<dyn Snapshot>>())
+                            .retention(retention.clone()),
                         name,
                         url.as_deref(),
                         cfg_options.as_ref(),

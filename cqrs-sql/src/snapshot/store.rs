@@ -1,4 +1,4 @@
-use super::{command, Upsert};
+use super::{command, Prune, Upsert};
 use crate::{
     new_version,
     sql::{self, Ident},
@@ -7,11 +7,13 @@ use crate::{
 use async_trait::async_trait;
 use cqrs::{
     message::{Descriptor, Schema, Transcoder},
-    snapshot::{Predicate, Snapshot, SnapshotError, Store},
+    snapshot::{Predicate, Retention, Snapshot, SnapshotError, Store},
     Clock, Mask,
 };
 use futures::StreamExt;
-use sqlx::{ColumnIndex, Connection, Database, Decode, Encode, Executor, IntoArguments, Pool, Row, Type};
+use sqlx::{
+    ColumnIndex, Connection, Database, Decode, Encode, Executor, IntoArguments, Pool, Row, Type,
+};
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
 /// Represents a SQL [snapshot store](Store).
@@ -22,6 +24,7 @@ pub struct SqlStore<ID, DB: Database> {
     mask: Option<Arc<dyn Mask>>,
     clock: Arc<dyn Clock>,
     transcoder: Arc<Transcoder<dyn Snapshot>>,
+    retention: Retention,
 }
 
 impl<ID, DB: Database> SqlStore<ID, DB> {
@@ -34,12 +37,14 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
     /// * `mask` - the [mask](Mask) used to obfuscate [versions](Version)
     /// * `clock` - the associated [clock](Clock)
     /// * `transcoder` - the associated [transcoder](Transcoder)
+    /// * `retention` - the [retention](Retention) policy
     pub fn new(
         table: Ident<'static>,
         pool: Pool<DB>,
         mask: Option<Arc<dyn Mask>>,
         clock: Arc<dyn Clock>,
         transcoder: Arc<Transcoder<dyn Snapshot>>,
+        retention: Retention,
     ) -> Self {
         Self {
             _id: PhantomData,
@@ -48,6 +53,7 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
             mask,
             clock,
             transcoder,
+            retention,
         }
     }
 
@@ -67,7 +73,7 @@ where
         + Send
         + Sync
         + Type<DB>,
-    DB: Database + Upsert,
+    DB: Database + for<'db> Prune<'db, ID, DB> + Upsert,
     for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
@@ -137,7 +143,7 @@ where
                 version = version.unmask(&mask);
             }
         }
-        
+
         if version.invalid() {
             return Err(SnapshotError::InvalidVersion);
         }
@@ -159,8 +165,18 @@ where
             correlation_id: None,
         };
         let mut db = self.pool.acquire().await.box_err()?;
-        let mut insert = command::insert(&self.table, &row);
-        let _ = insert.build().execute(&mut *db).await.box_err()?;
+
+        if self.retention.all() {
+            let mut insert = command::insert(&self.table, &row);
+            let _ = insert.build().execute(&mut *db).await.box_err()?;
+        } else {
+            let mut tx = db.begin().await.box_err()?;
+            let mut delete = DB::prune(&self.table, id, &*self.clock, &self.retention);
+            let mut insert = command::insert(&self.table, &row);
+            let _ = delete.build().execute(&mut *tx).await.box_err()?;
+            let _ = insert.build().execute(&mut *tx).await.box_err()?;
+            tx.commit().await.box_err()?;
+        }
 
         Ok(())
     }

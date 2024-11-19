@@ -8,7 +8,7 @@ use cfg_if::cfg_if;
 use cqrs::{
     event::Event,
     message::{Message, Transcoder},
-    snapshot::Snapshot,
+    snapshot::{Retention, Snapshot},
     Clock, Mask, WallClock,
 };
 use sqlx::{pool::PoolOptions, Database};
@@ -48,6 +48,7 @@ where
     clock: Option<Arc<dyn Clock>>,
     transcoder: Option<Arc<Transcoder<M>>>,
     snapshots: Option<Arc<DynSnapshotStore<ID>>>,
+    retention: Option<Retention>,
 }
 
 impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Event, DB> {
@@ -62,6 +63,7 @@ impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Event, DB> {
             clock: None,
             transcoder: None,
             snapshots: None,
+            retention: None,
         }
     }
 }
@@ -78,6 +80,7 @@ impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Snapshot, DB> {
             clock: None,
             transcoder: None,
             snapshots: None,
+            retention: None,
         }
     }
 }
@@ -199,6 +202,16 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Event, DB> {
 }
 
 impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Snapshot, DB> {
+    /// Configures the snapshot retention.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - the snapshot [retention](Retention) policy
+    pub fn retention<V: Into<Retention>>(mut self, value: V) -> Self {
+        self.retention = Some(value.into());
+        self
+    }
+
     /// Builds and returns a new [snapshot store](snapshot::Store).
     pub fn build(self) -> Result<snapshot::SqlStore<ID, DB>, SqlStoreBuilderError> {
         let url = self.url.ok_or(MissingUrl)?;
@@ -216,6 +229,7 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Snapshot, DB> {
             self.mask,
             self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
             self.transcoder.unwrap_or_default(),
+            self.retention.unwrap_or_default(),
         ))
     }
 }
@@ -284,6 +298,7 @@ cfg_if! {
                     self.mask,
                     self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
                     self.transcoder.unwrap_or_default(),
+                    self.retention.unwrap_or_default(),
                 ))
             }
         }
