@@ -261,7 +261,7 @@ where
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
 {
-    /// Configures SQL storage with SQL-based snapshots.
+    /// Configures storage with SQL-based snapshots.
     ///
     /// # Remarks
     ///
@@ -272,7 +272,7 @@ where
         self.snapshots_with(Retention::default())
     }
 
-    /// Configures SQL storage with SQL-based snapshots.
+    /// Configures storage with SQL-based snapshots.
     ///
     /// # Arguments
     ///
@@ -292,6 +292,7 @@ where
         self.parent.services.try_add(
             singleton_with_key::<A, DynSnapshotStore<A::ID>, snapshot::SqlStore<A::ID, DB>>()
                 .depends_on(zero_or_one::<dyn Mask>())
+                .depends_on(exactly_one::<dyn Clock>())
                 .depends_on(exactly_one::<Transcoder<dyn Snapshot>>())
                 .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<DB>>>())
                 .from(move |sp| {
@@ -299,6 +300,7 @@ where
                     let mut builder = merge(
                         snapshot::SqlStore::<A::ID, DB>::builder()
                             .table(name)
+                            .clock(sp.get_required::<dyn Clock>())
                             .transcoder(sp.get_required::<Transcoder<dyn Snapshot>>())
                             .retention(retention.clone()),
                         name,
@@ -343,6 +345,7 @@ where
 
         self.parent.services.try_add(
             singleton_with_key::<A, DynEventStore<A::ID>, event::SqlStore<A::ID, DB>>()
+                .depends_on(zero_or_one::<dyn Mask>())
                 .depends_on(exactly_one::<dyn Clock>())
                 .depends_on(exactly_one::<Transcoder<dyn Event>>())
                 .depends_on(zero_or_one_with_key::<A, DynSnapshotStore<A::ID>>())

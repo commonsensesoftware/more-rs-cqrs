@@ -5,7 +5,7 @@ use crate::{
 };
 use cfg_if::cfg_if;
 use cqrs::{
-    di::AggregateBuilder, event::Event, message::Transcoder, snapshot::Snapshot, Aggregate, Clock,
+    di::AggregateBuilder, event::Event, message::Transcoder, snapshot::{Retention, Snapshot}, Aggregate, Clock,
     Mask, Repository,
 };
 use di::{
@@ -215,21 +215,29 @@ where
         self.allow_delete = true;
         self
     }
-}
 
-impl<'a, A> SqliteStoreOptionsBuilder<'a, A>
-where
-    A: Aggregate + Default + Sync + 'static,
-    A::ID:
-        Clone + for<'db> Encode<'db, Sqlite> + for<'db> Decode<'db, Sqlite> + Sync + Type<Sqlite>,
-{
-    /// Configures SQL storage with SQL-based snapshots.
+    /// Configures storage with SQL-based snapshots.
     ///
     /// # Remarks
     ///
     /// In order to use a snapshot store which does not use SQL, a keyed service must be registered in the
     /// [`ServiceCollection`] for a [`cqrs::snapshot::Store`] using the type of [`Aggregate`] as the key.
-    pub fn snapshots(mut self) -> Self {
+    #[inline]
+    pub fn snapshots(self) -> Self {
+        self.snapshots_with(Retention::default())
+    }
+
+    /// Configures storage with SQL-based snapshots.
+    /// 
+    /// # Arguments
+    ///
+    /// * `retention` - the [retention](Retention) policy applied to snapshots
+    ///
+    /// # Remarks
+    ///
+    /// In order to use a snapshot store which does not use SQL, a keyed service must be registered in the
+    /// [`ServiceCollection`] for a [`cqrs::snapshot::Store`] using the type of [`Aggregate`] as the key.
+    pub fn snapshots_with(mut self, retention: Retention) -> Self {
         let name = self.parent.name;
         let url = self.url.clone();
         let cfg_options = self.options.clone();
@@ -241,6 +249,7 @@ where
             .try_add(
                 singleton_with_key::<A, SnapshotStore<A::ID>, SnapshotStore<A::ID>>()
                     .depends_on(zero_or_one::<dyn Mask>())
+                    .depends_on(exactly_one::<dyn Clock>())
                     .depends_on(exactly_one::<Transcoder<dyn Snapshot>>())
                     .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<Sqlite>>>())
                     .from(move |sp| {
@@ -248,7 +257,9 @@ where
                         let mut builder = merge(
                             SnapshotStore::<A::ID>::builder()
                                 .table(name)
-                                .transcoder(sp.get_required::<Transcoder<dyn Snapshot>>()),
+                                .clock(sp.get_required::<dyn Clock>())
+                                .transcoder(sp.get_required::<Transcoder<dyn Snapshot>>())
+                                .retention(retention.clone()),
                             name,
                             url.as_deref(),
                             cfg_options.as_ref(),
@@ -291,6 +302,7 @@ where
             .services
             .try_add(
                 singleton_with_key::<A, EventStore<A::ID>, EventStore<A::ID>>()
+                    .depends_on(zero_or_one::<dyn Mask>())
                     .depends_on(exactly_one::<dyn Clock>())
                     .depends_on(exactly_one::<Transcoder<dyn Event>>())
                     .depends_on(zero_or_one_with_key::<A, DynSnapshotStore<A::ID>>())
@@ -369,9 +381,7 @@ cfg_if! {
             fn drop(&mut self) {
                 self.parent.parent.services.add(
                     transient_as_self::<SqlStoreMigration<Sqlite>>()
-                        .depends_on(exactly_one::<dyn Clock>())
-                        .depends_on(exactly_one::<Transcoder<dyn Event>>())
-                        .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<Sqlite>>>())
+                        .depends_on(zero_or_one_with_key::<A, EventStore<A::ID>>())
                         .from(move |sp| {
                             let store = sp.get_required_by_key::<A, EventStore<A::ID>>();
                             let migration = SqlStoreMigration::with_pool(&*store, store.pool.clone());
@@ -386,10 +396,7 @@ cfg_if! {
 
                 self.parent.parent.services.add(
                     transient_as_self::<SqlStoreMigration<Sqlite>>()
-                        .depends_on(exactly_one::<dyn Clock>())
-                        .depends_on(exactly_one::<Transcoder<dyn Event>>())
-                        .depends_on(zero_or_one_with_key::<A, DynSnapshotStore<A::ID>>())
-                        .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<Sqlite>>>())
+                        .depends_on(zero_or_one_with_key::<A, SnapshotStore<A::ID>>())
                         .from(move |sp| {
                             let store = sp.get_required_by_key::<A, SnapshotStore<A::ID>>();
                             let migration = SqlStoreMigration::with_pool(&*store, store.pool.clone());

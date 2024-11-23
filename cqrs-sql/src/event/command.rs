@@ -1,36 +1,13 @@
-use crate::sql;
+use crate::sql::{self, greater_than, less_than};
 use cqrs::{
     event::{Predicate, StoreError},
     Range,
 };
 use sqlx::{Database, Encode, Executor, IntoArguments, QueryBuilder, Transaction, Type};
-use std::{
-    error::Error,
-    fmt::Debug,
-    ops::Bound::{self, *},
-    time::SystemTime,
-};
+use std::{error::Error, fmt::Debug, time::SystemTime};
 
 #[inline]
-fn ge(bound: &Bound<SystemTime>) -> (&'static str, SystemTime) {
-    match bound {
-        Included(value) => (">=", *value),
-        Excluded(value) => (">", *value),
-        _ => unreachable!(),
-    }
-}
-
-#[inline]
-fn le(bound: &Bound<SystemTime>) -> (&'static str, SystemTime) {
-    match bound {
-        Included(value) => ("<=", *value),
-        Excluded(value) => ("<", *value),
-        _ => unreachable!(),
-    }
-}
-
-#[inline]
-fn and_stored_on<'a, D>(builder: &mut QueryBuilder<'a, D>, (op, time): (&str, SystemTime))
+fn and_stored_on<'a, D>(builder: &mut QueryBuilder<'a, D>, (time, op): (SystemTime, &str))
 where
     D: Database,
     i64: Encode<'a, D> + Type<D>,
@@ -56,20 +33,21 @@ where
         .push(table.quote())
         .push(" WHERE version = 1 AND sequence = 0");
 
-    if !stored_on.unbounded() {
+    if let Some(lower) = greater_than(&stored_on.from) {
         select.push(" AND ");
 
-        if matches!(stored_on.from, Unbounded) {
-            and_stored_on(&mut select, le(&stored_on.to));
-        } else if matches!(stored_on.to, Unbounded) {
-            and_stored_on(&mut select, ge(&stored_on.from));
-        } else {
+        if let Some(upper) = less_than(&stored_on.to) {
             select.push('(');
-            and_stored_on(&mut select, ge(&stored_on.from));
+            and_stored_on(&mut select, lower);
             select.push(" AND ");
-            and_stored_on(&mut select, le(&stored_on.to));
+            and_stored_on(&mut select, upper);
             select.push(')');
+        } else {
+            and_stored_on(&mut select, lower);
         }
+    } else if let Some(upper) = less_than(&stored_on.to) {
+        select.push(" AND ");
+        and_stored_on(&mut select, upper);
     }
 
     select.push(';');
@@ -115,27 +93,29 @@ where
             select.push("version = ").push_bind(version);
         }
 
-        if !predicate.stored_on.unbounded() {
+        if let Some(lower) = greater_than(&predicate.stored_on.from) {
             add_where(&mut select, &mut added);
-
-            if matches!(predicate.stored_on.from, Unbounded) {
-                and_stored_on(&mut select, le(&predicate.stored_on.to));
-            } else if matches!(predicate.stored_on.to, Unbounded) {
-                and_stored_on(&mut select, ge(&predicate.stored_on.from));
-            } else {
+    
+            if let Some(upper) = less_than(&predicate.stored_on.to) {
                 select.push('(');
-                and_stored_on(&mut select, ge(&predicate.stored_on.from));
+                and_stored_on(&mut select, lower);
                 select.push(" AND ");
-                and_stored_on(&mut select, le(&predicate.stored_on.to));
+                and_stored_on(&mut select, upper);
                 select.push(')');
+            } else {
+                and_stored_on(&mut select, lower);
             }
+        } else if let Some(upper) = less_than(&predicate.stored_on.to) {
+            add_where(&mut select, &mut added);
+            and_stored_on(&mut select, upper);
         }
 
-        let many = predicate.types.len() > 1;
         let mut schemas = predicate.types.iter();
-
+        
         if let Some(schema) = schemas.next() {
             add_where(&mut select, &mut added);
+            
+            let many = predicate.types.len() > 1;
 
             if many {
                 select.push('(');

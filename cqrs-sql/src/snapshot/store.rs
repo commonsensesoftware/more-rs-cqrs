@@ -34,7 +34,7 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
     ///
     /// * `table` - the table [identifier](Ident)
     /// * `pool` - the underlying [connection pool](Pool)
-    /// * `mask` - the [mask](Mask) used to obfuscate [versions](Version)
+    /// * `mask` - the [mask](Mask) used to obfuscate [versions](cqrs::Version)
     /// * `clock` - the associated [clock](Clock)
     /// * `transcoder` - the associated [transcoder](Transcoder)
     /// * `retention` - the [retention](Retention) policy
@@ -95,7 +95,6 @@ where
                 .decode(&descriptor.schema, &descriptor.content)?;
 
             snapshot.set_version(descriptor.version);
-
             Ok(Some(snapshot))
         } else {
             Ok(None)
@@ -150,14 +149,11 @@ where
 
         let stored_on = crate::to_secs(self.clock.now());
         let schema = snapshot.schema();
-        let content = match self.transcoder.encode(snapshot.as_ref()) {
-            Ok(content) => content,
-            Err(error) => return Err(SnapshotError::InvalidEncoding(error)),
-        };
+        let content = self.transcoder.encode(snapshot.as_ref())?;
         let row = sql::Row::<ID> {
             id: id.clone(),
             version: version.number(),
-            sequence: Default::default(),
+            sequence: version.sequence(),
             stored_on,
             kind: schema.kind().into(),
             revision: schema.version() as i16,

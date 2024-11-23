@@ -1,11 +1,13 @@
 use super::event_command as command;
 use crate::{
-    event::Delete, new_version, sql::{Context, Ident, IntoRows}, BoxErr, SqlStoreBuilder, SqlVersion, SqlVersionPart
+    new_version,
+    sql::{Context, Ident, IntoRows},
+    BoxErr, SqlStoreBuilder, SqlVersion, SqlVersionPart,
 };
 use async_stream::try_stream;
 use async_trait::async_trait;
 use cqrs::{
-    event::{Event, EventStream, IdStream, Predicate, Store, StoreError},
+    event::{Delete, Event, EventStream, IdStream, Predicate, Store, StoreError},
     message::{Descriptor, Schema, Transcoder},
     snapshot::{self, SnapshotError},
     Clock, Mask, Range, Version,
@@ -324,7 +326,7 @@ where
 
             if execute {
                 let mut insert = command::insert(&self.table, &first);
-    
+
                 if let Err(error) = insert.build().execute(&mut *db).await {
                     if let sqlx::Error::Database(error) = &error {
                         if error.is_unique_violation() {
@@ -352,11 +354,15 @@ where
     }
 
     async fn delete(&self, id: &ID) -> Result<(), StoreError<ID>> {
+        if self.delete.unsupported() {
+            return Err(StoreError::Unsupported);
+        }
+
         let mut db = self.pool.acquire().await.box_err()?;
         let mut tx = db.begin().await.box_err()?;
         let mut delete = command::delete(&self.table, id);
         let _ = delete.build().execute(&mut *tx).await.box_err()?;
-        
+
         if let Some(snapshots) = &self.snapshots {
             snapshots.delete(id).await?;
         }

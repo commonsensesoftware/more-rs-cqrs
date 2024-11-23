@@ -1,12 +1,8 @@
 use self::SqlStoreBuilderError::*;
-use crate::{
-    event::{self, Delete},
-    snapshot,
-    sql::Ident,
-};
+use crate::{event, snapshot, sql::Ident};
 use cfg_if::cfg_if;
 use cqrs::{
-    event::Event,
+    event::{Delete, Event},
     message::{Message, Transcoder},
     snapshot::{Retention, Snapshot},
     Clock, Mask, WallClock,
@@ -56,7 +52,7 @@ impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Event, DB> {
         Self {
             schema: "events",
             table: None,
-            delete: Delete::Unsupported,
+            delete: Default::default(),
             url: None,
             options: None,
             mask: None,
@@ -73,7 +69,7 @@ impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Snapshot, DB> {
         Self {
             schema: "snapshots",
             table: None,
-            delete: Delete::Unsupported,
+            delete: Default::default(),
             url: None,
             options: None,
             mask: None,
@@ -134,7 +130,7 @@ where
     ///
     /// # Arguments
     ///
-    /// * `value` - the [mask](Mask) used to obfuscate [versions](Version)
+    /// * `value` - the [mask](Mask) used to obfuscate [versions](cqrs::Version)
     pub fn mask<V: Into<Arc<dyn Mask>>>(mut self, value: V) -> Self {
         self.mask = Some(value.into());
         self
@@ -150,7 +146,7 @@ where
         self
     }
 
-    /// Configures the transcoder used to encode and decode store events.
+    /// Configures the transcoder used to encode and decode store messages.
     ///
     /// # Arguments
     ///
@@ -178,7 +174,7 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Event, DB> {
         self
     }
 
-    /// Builds and returns a new [event store](event::Store).
+    /// Builds and returns a new [event store](event::SqlStore).
     pub fn build(self) -> Result<event::SqlStore<ID, DB>, SqlStoreBuilderError> {
         let url = self.url.ok_or(MissingUrl)?;
         let options = self.options.unwrap_or_default();
@@ -212,7 +208,7 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Snapshot, DB> {
         self
     }
 
-    /// Builds and returns a new [snapshot store](snapshot::Store).
+    /// Builds and returns a new [snapshot store](snapshot::SqlStore).
     pub fn build(self) -> Result<snapshot::SqlStore<ID, DB>, SqlStoreBuilderError> {
         let url = self.url.ok_or(MissingUrl)?;
         let options = self.options.unwrap_or_default();

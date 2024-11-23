@@ -1,21 +1,11 @@
 use super::Upsert;
-use crate::{sql, SqlVersion};
+use crate::{
+    sql::{self, greater_than},
+    SqlVersion,
+};
 use cqrs::{snapshot::Predicate, Mask};
 use sqlx::{Database, Encode, Executor, IntoArguments, QueryBuilder, Type};
-use std::{
-    fmt::Debug,
-    ops::Bound::{self, *},
-    sync::Arc,
-};
-
-#[inline]
-fn ge<T: Copy>(bound: &Bound<T>) -> (&'static str, T) {
-    match bound {
-        Included(value) => (">=", *value),
-        Excluded(value) => (">", *value),
-        _ => unreachable!(),
-    }
-}
+use std::{fmt::Debug, sync::Arc};
 
 pub fn select<'a, ID, DB>(
     table: &sql::Ident<'a>,
@@ -38,9 +28,7 @@ where
         .push_bind(id);
 
     if let Some(predicate) = predicate {
-        if !matches!(predicate.min_version, Unbounded) {
-            let (op, mut version) = ge(&predicate.min_version);
-
+        if let Some((mut version, op)) = greater_than(&predicate.min_version) {
             if let Some(mask) = &mask {
                 version = version.unmask(mask);
             }
@@ -52,8 +40,7 @@ where
                 .push_bind(version.number());
         }
 
-        if !matches!(predicate.since, Unbounded) {
-            let (op, since) = ge(&predicate.since);
+        if let Some((since, op)) = greater_than(&predicate.since) {
             select
                 .push(" AND ")
                 .push(op)

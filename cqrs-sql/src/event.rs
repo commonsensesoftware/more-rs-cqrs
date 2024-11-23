@@ -1,4 +1,4 @@
 mod command;
 mod store;
 
-pub use store::{Delete, SqlStore};
+pub use store::SqlStore;

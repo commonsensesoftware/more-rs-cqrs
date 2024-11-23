@@ -7,14 +7,14 @@ use crate::{
 use async_stream::try_stream;
 use async_trait::async_trait;
 use cqrs::{
-    event::{Event, EventStream, IdStream, Predicate, Store, StoreError},
+    event::{Delete, Event, EventStream, IdStream, Predicate, Store, StoreError},
     message::{Descriptor, Schema, Transcoder},
     snapshot::{self, SnapshotError},
     Clock, Mask, Range, Version,
 };
-use futures::{stream, Stream};
+use futures::stream;
 use sqlx::{
-    pool::PoolConnection, ColumnIndex, Connection, Database, Decode, Encode, Executor,
+    ColumnIndex, Connection, Database, Decode, Encode, Executor,
     IntoArguments, Pool, Row, Type,
 };
 use std::{
@@ -76,105 +76,6 @@ fn select_version<T: Debug + Send>(
             Excluded(version) => Some(version.number()),
             _ => None,
         }
-    }
-}
-
-fn distinct_ids<ID, DB>(
-    mut db: PoolConnection<DB>,
-    ident: Ident,
-    stored_on: Range<SystemTime>,
-) -> impl Stream<Item = Result<ID, StoreError<ID>>> + Send + '_
-where
-    ID: Debug + for<'db> Decode<'db, DB> + Send + Sync + Type<DB> + 'static,
-    DB: Database,
-    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
-    for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
-    i64: for<'db> Encode<'db, DB> + Type<DB>,
-    usize: ColumnIndex<<DB as Database>::Row>,
-{
-    try_stream! {
-        let mut query = command::select_id(ident, stored_on);
-        let rows = query.build().fetch(&mut *db);
-
-        for await row in rows {
-            yield row.box_err()?.get::<ID, _>(0);
-        }
-    }
-}
-
-fn query<'a, ID, DB>(
-    mut db: PoolConnection<DB>,
-    ident: Ident<'a>,
-    predicate: Option<&'a Predicate<'a, ID>>,
-    mask: Option<Arc<dyn Mask>>,
-    transcoder: Arc<Transcoder<dyn Event>>,
-    snapshot: Option<Descriptor>,
-) -> impl Stream<Item = Result<Box<dyn Event>, StoreError<ID>>> + Send + 'a
-where
-    ID: Debug + for<'db> Decode<'db, DB> + for<'db> Encode<'db, DB> + Send + Sync + Type<DB> + 'a,
-    DB: Database,
-    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
-    for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
-    i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
-    i32: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
-    i64: for<'db> Encode<'db, DB> + Type<DB>,
-    usize: ColumnIndex<<DB as Database>::Row>,
-    String: for<'db> Encode<'db, DB> + Type<DB>,
-    for<'db> &'db str: Decode<'db, DB> + Type<DB>,
-    for<'db> &'db [u8]: Decode<'db, DB> + Type<DB>,
-{
-    const TYPE: usize = 0;
-    const REVISION: usize = 1;
-    const CONTENT: usize = 2;
-
-    try_stream! {
-        let mut version = None;
-
-        if let Some(filter) = predicate {
-            version = select_version(snapshot.as_ref(), filter, mask.clone());
-
-            if let Some(snapshot) = snapshot {
-                let event = transcoder.decode(&snapshot.schema, &snapshot.content)?;
-                yield event;
-            }
-        }
-
-        let mut query = command::select(ident, predicate, version);
-        let rows = query.build().fetch(&mut *db);
-
-        for await result in rows {
-            let row = result.box_err()?;
-            let schema = Schema::new(
-                row.get::<&str, _>(TYPE),
-                row.get::<i16, _>(REVISION) as u8,
-            );
-            let content = row.get::<&[u8], _>(CONTENT);
-            let mut event = transcoder.decode(&schema, content)?;
-
-            if let Some(mask) = &mask {
-                event.set_version(event.version().mask(mask));
-            }
-
-            yield event;
-        }
-    }
-}
-
-/// Defines the possible delete operation behaviors.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Delete {
-    /// Indicates that delete operations are unsupported.
-    Unsupported,
-
-    /// Indicates that delete operations are supported.
-    Supported,
-}
-
-impl Delete {
-    /// Gets a value indicating whether delete is supported.
-    #[inline]
-    pub fn supported(&self) -> bool {
-        matches!(self, Delete::Supported)
     }
 }
 
@@ -273,17 +174,24 @@ where
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
 {
     async fn ids(&self, stored_on: Range<SystemTime>) -> IdStream<ID> {
-        let db = match self.pool.acquire().await.box_err() {
+        let mut db = match self.pool.acquire().await.box_err() {
             Ok(db) => db,
             Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::Unknown(error))])),
         };
         let table = self.table.clone();
 
-        Box::pin(distinct_ids(db, table, stored_on))
+        Box::pin(try_stream! {
+            let mut query = command::select_id(table, stored_on);
+            let rows = query.build().fetch(&mut *db);
+
+            for await row in rows {
+                yield row.box_err()?.get::<ID, _>(0);
+            }
+        })
     }
 
     async fn load<'a>(&self, predicate: Option<&'a Predicate<'a, ID>>) -> EventStream<'a, ID> {
-        let db = match self.pool.acquire().await.box_err() {
+        let mut db = match self.pool.acquire().await.box_err() {
             Ok(db) => db,
             Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::Unknown(error))])),
         };
@@ -295,7 +203,41 @@ where
         let mask = self.mask.clone();
         let transcoder = self.transcoder.clone();
 
-        Box::pin(query(db, table, predicate, mask, transcoder, snapshot))
+        Box::pin(try_stream! {
+            const TYPE: usize = 0;
+            const REVISION: usize = 1;
+            const CONTENT: usize = 2;
+
+            let mut version = None;
+
+            if let Some(filter) = predicate {
+                version = select_version(snapshot.as_ref(), filter, mask.clone());
+
+                if let Some(snapshot) = snapshot {
+                    let event = transcoder.decode(&snapshot.schema, &snapshot.content)?;
+                    yield event;
+                }
+            }
+
+            let mut query = command::select(table, predicate, version);
+            let rows = query.build().fetch(&mut *db);
+
+            for await result in rows {
+                let row = result.box_err()?;
+                let schema = Schema::new(
+                    row.get::<&str, _>(TYPE),
+                    row.get::<i16, _>(REVISION) as u8,
+                );
+                let content = row.get::<&[u8], _>(CONTENT);
+                let mut event = transcoder.decode(&schema, content)?;
+
+                if let Some(mask) = &mask {
+                    event.set_version(event.version().mask(mask));
+                }
+
+                yield event;
+            }
+        })
     }
 
     async fn save(
@@ -304,6 +246,10 @@ where
         events: &mut [Box<dyn Event>],
         mut expected_version: Version,
     ) -> Result<(), StoreError<ID>> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        
         if expected_version != Version::default() {
             if let Some(mask) = self.mask.clone() {
                 expected_version = expected_version.unmask(&mask);
@@ -397,7 +343,7 @@ where
     }
 
     async fn delete(&self, id: &ID) -> Result<(), StoreError<ID>> {
-        if !self.delete.supported() {
+        if self.delete.unsupported() {
             return Err(StoreError::Unsupported);
         }
 

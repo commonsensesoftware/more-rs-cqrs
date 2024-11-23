@@ -139,10 +139,7 @@ where
 
         let stored_on = crate::to_secs(self.clock.now());
         let schema = snapshot.schema();
-        let content = match self.transcoder.encode(snapshot.as_ref()) {
-            Ok(content) => content,
-            Err(error) => return Err(SnapshotError::InvalidEncoding(error)),
-        };
+        let content = self.transcoder.encode(snapshot.as_ref())?;
         let row = sql::Row::<ID> {
             id: id.clone(),
             version: version.number(),
