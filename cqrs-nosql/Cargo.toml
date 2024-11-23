@@ -1,0 +1,37 @@
+[package]
+name = "more-cqrs-nosql"
+readme = "README.md"
+description = "NoSQL storage support for CQRS"
+keywords = ["cqrs", "sql"]
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cqrs_nosql"
+
+[features]
+di = ["more-cqrs/di", "dep:more-di", "dep:more-options", "dep:serde"]
+migrate = []
+dynamodb = ["dep:aws-config", "dep:aws-sdk-dynamodb"]
+
+[dependencies]
+more-cqrs = { path = "../cqrs" }
+aws-config = { version = "1.5", features = ["behavior-version-latest"], optional = true }
+aws-sdk-dynamodb = { version = "1.23", optional = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+cfg-if = { workspace = true }
+futures = { workspace = true, features = ["executor"] }
+futures-core = { workspace = true }
+more-di = { workspace = true, features = ["async"], optional = true }
+more-options = { workspace = true, optional = true, features = ["async", "di"] }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+rstest = { workspace = true }

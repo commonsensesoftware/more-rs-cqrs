@@ -1,8 +1,7 @@
 [workspace]
 members = [
 	"cqrs",
-	"cqrs-macros",
-	"cqrs-sql",
+	"cqrs-*",
 	"examples/*",
 ]
 resolver = "2"
