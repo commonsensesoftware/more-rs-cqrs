@@ -1,8 +1,10 @@
+mod delete;
 mod message;
 mod predicate;
 mod receiver;
 mod store;
 
+pub use delete::Delete;
 pub use message::Event;
 pub use predicate::{LoadOptions, Predicate, PredicateBuilder};
 pub use receiver::Receiver;
