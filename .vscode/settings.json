@@ -19,5 +19,6 @@
         "transcoders",
         "versionless",
         "thiserror"
-    ]
+    ],
+    "rust-analyzer.testExplorer": true
 }
