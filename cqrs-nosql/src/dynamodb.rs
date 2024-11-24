@@ -85,7 +85,7 @@ async fn delete_all(
         .scan_index_forward(false)
         .key_condition_expression("id = :id")
         .expression_attribute_values(":id", S(id))
-        .projection_expression("id, ct, takenOn")
+        .projection_expression("id, version, takenOn")
         .into_paginator();
     let mut keys = query.items().send();
     let mut batch = Vec::with_capacity(MAX_BATCH_SIZE);
@@ -132,7 +132,7 @@ async fn delete_all(
                 .delete_request(
                     DeleteRequest::builder()
                         .key("id", attributes.remove("id").unwrap())
-                        .key("ct", attributes.remove("ct").unwrap())
+                        .key("version", attributes.remove("version").unwrap())
                         .build()
                         .unwrap(),
                 )

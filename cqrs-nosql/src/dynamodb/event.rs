@@ -1,6 +1,6 @@
 use super::{coerce, delete_all, greater_than, less_than, Builder};
 use crate::{
-    version::new_version,
+    version::{from_sort_key, new_version},
     BoxErr, NoSqlVersion,
     NoSqlVersionPart::{Sequence, Version as ByOne},
 };
@@ -204,10 +204,10 @@ where
                 let update = Update::builder()
                     .table_name(&self.table)
                     .key("id", S(id.to_string()))
-                    .key("ct", N(previous.sort_key().to_string()))
+                    .key("version", N(previous.sort_key().to_string()))
                     .update_expression("SET version = :version")
-                    .condition_expression("attribute_exists(id) AND attribute_exists(ct)")
-                    .expression_attribute_values(":version", N(previous.number().to_string()));
+                    .condition_expression("attribute_exists(id) AND attribute_exists(version)")
+                    .expression_attribute_values(":version", N(previous.sort_key().to_string()));
 
                 request = request.transact_items(
                     TransactWriteItem::builder()
@@ -218,14 +218,14 @@ where
                 let mut put = Put::builder()
                     .table_name(&self.table)
                     .item("id", S(id.to_string()))
-                    .item("ct", N(version.sort_key().to_string()))
-                    .item("version", N(version.number().to_string()))
-                    .item("sequence", N(version.sequence().to_string()))
+                    .item("version", N(version.sort_key().to_string()))
                     .item("storedOn", N(stored_on.to_string()))
                     .item("kind", S(schema.kind().into()))
                     .item("revision", N(schema.version().to_string()))
                     .item("content", B(Blob::new(content)))
-                    .condition_expression("attribute_not_exists(id) AND attribute_not_exists(ct)");
+                    .condition_expression(
+                        "attribute_not_exists(id) AND attribute_not_exists(version)",
+                    );
 
                 if let Some(cid) = event.correlation_id() {
                     put = put.item("correlationId", S(cid.into()));
@@ -246,9 +246,10 @@ where
                                 if let Some(code) = &reason.code {
                                     if code == "ConditionalCheckFailed" {
                                         if let Some(item) = &reason.item {
-                                            if version.number()
-                                                == coerce::<u32>("version", &item, Attr::as_n)
-                                            {
+                                            let existing =
+                                                from_sort_key(coerce("version", &item, Attr::as_n));
+
+                                            if version.number() == existing.number() {
                                                 return Err(StoreError::Conflict(
                                                     id.clone(),
                                                     version.number(),
@@ -265,7 +266,7 @@ where
 
                     return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
                 } else {
-                    return Ok(new_version(version.number(), version.sequence()));
+                    return Ok(version);
                 }
             }
         }
@@ -275,14 +276,12 @@ where
             .put_item()
             .table_name(&self.table)
             .item("id", S(id.to_string()))
-            .item("ct", N(version.sort_key().to_string()))
-            .item("version", N(version.number().to_string()))
-            .item("sequence", N(version.sequence().to_string()))
+            .item("version", N(version.sort_key().to_string()))
             .item("storedOn", N(stored_on.to_string()))
             .item("kind", S(schema.kind().into()))
             .item("revision", N(schema.version().to_string()))
             .item("content", B(Blob::new(content)))
-            .condition_expression("attribute_not_exists(id) AND attribute_not_exists(ct)");
+            .condition_expression("attribute_not_exists(id) AND attribute_not_exists(version)");
 
         if let Some(cid) = event.correlation_id() {
             request = request.item("correlationId", S(cid.into()));
@@ -299,7 +298,7 @@ where
                 Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>))
             }
         } else {
-            Ok(new_version(version.number(), version.sequence()))
+            Ok(version)
         }
     }
 
@@ -320,10 +319,10 @@ where
                 let update = Update::builder()
                     .table_name(&self.table)
                     .key("id", S(id.to_string()))
-                    .key("ct", N(previous.sort_key().to_string()))
+                    .key("version", N(previous.sort_key().to_string()))
                     .update_expression("SET version = :version")
-                    .condition_expression("attribute_exists(id) AND attribute_exists(ct)")
-                    .expression_attribute_values(":version", N(previous.number().to_string()));
+                    .condition_expression("attribute_exists(id) AND attribute_exists(version)")
+                    .expression_attribute_values(":version", N(previous.sort_key().to_string()));
 
                 request = request.transact_items(
                     TransactWriteItem::builder()
@@ -344,14 +343,12 @@ where
             let mut put = Put::builder()
                 .table_name(&self.table)
                 .item("id", S(id.to_string()))
-                .item("ct", N(version.sort_key().to_string()))
-                .item("version", N(version.number().to_string()))
-                .item("sequence", N(version.sequence().to_string()))
+                .item("version", N(version.sort_key().to_string()))
                 .item("storedOn", N(stored_on.to_string()))
                 .item("kind", S(schema.kind().into()))
                 .item("revision", N(schema.version().to_string()))
                 .item("content", B(Blob::new(content)))
-                .condition_expression("attribute_not_exists(id) AND attribute_not_exists(ct)");
+                .condition_expression("attribute_not_exists(id) AND attribute_not_exists(version)");
 
             if let Some(cid) = event.correlation_id() {
                 put = put.item("correlationId", S(cid.into()));
@@ -362,7 +359,7 @@ where
                     .put(put.build().unwrap())
                     .build(),
             );
-            versions.push(new_version(version.number(), version.sequence()));
+            versions.push(version.clone());
             version = version.increment(Sequence);
         }
 
@@ -375,9 +372,10 @@ where
                         if let Some(code) = &reason.code {
                             if code == "ConditionalCheckFailed" {
                                 if let Some(item) = &reason.item {
-                                    if version.number()
-                                        == coerce::<u32>("version", &item, Attr::as_n)
-                                    {
+                                    let existing =
+                                        from_sort_key(coerce("version", &item, Attr::as_n));
+
+                                    if version.number() == existing.number() {
                                         return Err(StoreError::Conflict(
                                             id.clone(),
                                             version.number(),

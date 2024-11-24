@@ -101,7 +101,7 @@ where
                 condition.push_str(op);
                 condition.push_str(" :version");
                 request = request
-                    .expression_attribute_values(":version", N(version.sort_key().to_string()));
+                    .expression_attribute_values(":version", N(version.number().to_string()));
             }
 
             // filters are processed after key matches and we're going in reverse so we want the
@@ -130,10 +130,7 @@ where
                 coerce::<String>("kind", &attributes, AttributeValue::as_s),
                 coerce("revision", &attributes, AttributeValue::as_n),
             );
-            let mut version = new_version(
-                coerce("version", &attributes, AttributeValue::as_n),
-                coerce("sequence", &attributes, AttributeValue::as_n),
-            );
+            let mut version = new_version(coerce("version", &attributes, AttributeValue::as_n), 0);
             let empty = Blob::default();
             let content = if let Some(attribute) = attributes.get("content") {
                 attribute.as_b().unwrap_or(&empty)
@@ -175,7 +172,6 @@ where
             .table_name(&self.table)
             .item("id", S(id.to_string()))
             .item("version", N(version.number().to_string()))
-            .item("version", N(version.sequence().to_string()))
             .item("takenOn", N(stored_on.to_string()))
             .item("kind", S(schema.kind().into()))
             .item("revision", N(schema.version().to_string()))

@@ -46,6 +46,12 @@ fn encode(version: u32, sequence: u8) -> u64 {
 }
 
 #[inline]
+pub(crate) fn from_sort_key(version: u32) -> Version {
+    let decoded = Version::new(version as u64);
+    new_version(decoded.number(), decoded.sequence())
+}
+
+#[inline]
 #[allow(dead_code)]
 pub fn new_version(version: u32, sequence: u8) -> Version {
     Version::new(encode(version, sequence))
@@ -119,7 +125,7 @@ pub struct NoSqlVersionDisplay {
 
 impl NoSqlVersion for Version {
     fn max() -> Self {
-        Self::new(((u32::MAX as u64) & 0x00000000_FFFFFF00) | MAX_SEQ as u64)
+        Self::new(encode(u32::MAX >> 8, MAX_SEQ))
     }
 
     fn number(&self) -> u32 {
