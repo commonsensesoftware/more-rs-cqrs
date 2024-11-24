@@ -1,4 +1,4 @@
-use super::{coerce, greater_than, less_than, Builder};
+use super::{coerce, delete_all, greater_than, less_than, Builder};
 use crate::{version::new_version, BoxErr, NoSqlVersion};
 use async_trait::async_trait;
 use aws_sdk_dynamodb::{
@@ -21,7 +21,6 @@ pub struct SnapshotStore<T> {
     mask: Option<Arc<dyn Mask>>,
     clock: Arc<dyn Clock>,
     transcoder: Arc<Transcoder<dyn Snapshot>>,
-    retention: Retention,
 }
 
 impl<T> SnapshotStore<T> {
@@ -34,14 +33,12 @@ impl<T> SnapshotStore<T> {
     /// * `mask` - the [mask](Mask) used to obfuscate [versions](cqrs::Version)
     /// * `clock` - the associated [clock](Clock)
     /// * `transcoder` - the associated [transcoder](Transcoder)
-    /// * `retention` - the [retention](Retention) policy
     pub fn new(
         client: Client,
         table: String,
         mask: Option<Arc<dyn Mask>>,
         clock: Arc<dyn Clock>,
         transcoder: Arc<Transcoder<dyn Snapshot>>,
-        retention: Retention,
     ) -> Self {
         Self {
             _id: PhantomData,
@@ -50,7 +47,6 @@ impl<T> SnapshotStore<T> {
             mask,
             clock,
             transcoder,
-            retention,
         }
     }
 
@@ -189,16 +185,8 @@ where
         Ok(())
     }
 
-    async fn delete(&self, id: &T) -> Result<(), SnapshotError> {
-        let request = self
-            .ddb
-            .delete_item()
-            .table_name(&self.table)
-            .condition_expression("(id = :id) AND (version >= :version)")
-            .expression_attribute_values(":id", S(id.to_string()))
-            .expression_attribute_values(":version", N(new_version(1, 0).sort_key().to_string()));
-
-        let _ = request.send().await.box_err()?;
+    async fn prune(&self, id: &T, retention: Option<&Retention>) -> Result<(), SnapshotError> {
+        delete_all(&self.ddb, &self.table, id.to_string(), retention).await?;
         Ok(())
     }
 }

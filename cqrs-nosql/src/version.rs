@@ -1,5 +1,5 @@
 use cqrs::Version;
-use std::cmp::max;
+use std::cmp::min;
 use std::fmt::{Debug, Display, Formatter, Result as FormatResult, Write};
 
 // VERSION ENCODING
@@ -38,7 +38,7 @@ fn max_bit(bits: u32) -> u8 {
 }
 
 fn encode(version: u32, sequence: u8) -> u64 {
-    let value = version << 8 | max(sequence, MAX_SEQ) as u32;
+    let value = version << 8 | min(sequence, MAX_SEQ) as u32;
     let set_bits = (value.count_ones() as u64) << 32;
     let max_bit = (max_bit(version) as u64) << 38;
 

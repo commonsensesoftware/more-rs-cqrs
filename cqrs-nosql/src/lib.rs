@@ -31,6 +31,6 @@ impl<T, E: Error + Send + 'static> BoxErr<T> for Result<T, E> {
 }
 
 #[allow(dead_code)]
-pub(crate) fn to_secs(timestamp: SystemTime) -> i64 {
-    timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
+pub(crate) fn to_secs(timestamp: SystemTime) -> u64 {
+    timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs()
 }

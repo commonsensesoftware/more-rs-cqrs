@@ -353,7 +353,7 @@ where
         let _ = delete.build().execute(&mut *tx).await.box_err()?;
 
         if let Some(snapshots) = &self.snapshots {
-            snapshots.delete(id).await?;
+            snapshots.prune(id, None).await?;
         }
 
         tx.commit().await.box_err()?;

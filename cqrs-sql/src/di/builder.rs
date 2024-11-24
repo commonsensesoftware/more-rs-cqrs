@@ -7,7 +7,7 @@ use cfg_if::cfg_if;
 use cqrs::{
     event::Event,
     message::Transcoder,
-    snapshot::{Retention, Snapshot},
+    snapshot::Snapshot,
     Aggregate, Clock, Mask, Repository,
 };
 use di::{
@@ -268,21 +268,7 @@ where
     /// In order to use a snapshot store which does not use SQL, a keyed service must be registered in the
     /// [`ServiceCollection`] for a [`cqrs::snapshot::Store`] using the type of [`Aggregate`] as the key.
     #[inline]
-    pub fn snapshots(self) -> Self {
-        self.snapshots_with(Retention::default())
-    }
-
-    /// Configures storage with SQL-based snapshots.
-    ///
-    /// # Arguments
-    ///
-    /// * `retention` - the [retention](Retention) policy applied to snapshots
-    ///
-    /// # Remarks
-    ///
-    /// In order to use a snapshot store which does not use SQL, a keyed service must be registered in the
-    /// [`ServiceCollection`] for a [`cqrs::snapshot::Store`] using the type of [`Aggregate`] as the key.
-    pub fn snapshots_with(mut self, retention: Retention) -> Self {
+    pub fn snapshots(mut self) -> Self {
         let name = self.parent.name;
         let url = self.url.clone();
         let cfg_options = self.options.clone();
@@ -301,8 +287,7 @@ where
                         snapshot::SqlStore::<A::ID, DB>::builder()
                             .table(name)
                             .clock(sp.get_required::<dyn Clock>())
-                            .transcoder(sp.get_required::<Transcoder<dyn Snapshot>>())
-                            .retention(retention.clone()),
+                            .transcoder(sp.get_required::<Transcoder<dyn Snapshot>>()),
                         name,
                         url.as_deref(),
                         cfg_options.as_ref(),

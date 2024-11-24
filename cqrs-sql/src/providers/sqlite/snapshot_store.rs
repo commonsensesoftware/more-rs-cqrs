@@ -23,7 +23,6 @@ pub struct SnapshotStore<ID> {
     mask: Option<Arc<dyn Mask>>,
     clock: Arc<dyn Clock>,
     transcoder: Arc<Transcoder<dyn Snapshot>>,
-    retention: Retention,
 }
 
 impl<ID> SnapshotStore<ID> {
@@ -36,14 +35,12 @@ impl<ID> SnapshotStore<ID> {
     /// * `mask` - the [mask](Mask) used to obfuscate [versions](Version)
     /// * `clock` - the associated [clock](Clock)
     /// * `transcoder` - the associated [transcoder](Transcoder)
-    /// * `retention` - the [retention](Retention) policy
     pub fn new(
         table: Ident<'static>,
         pool: Pool<Sqlite>,
         mask: Option<Arc<dyn Mask>>,
         clock: Arc<dyn Clock>,
         transcoder: Arc<Transcoder<dyn Snapshot>>,
-        retention: Retention,
     ) -> Self {
         Self {
             _id: PhantomData,
@@ -52,7 +49,6 @@ impl<ID> SnapshotStore<ID> {
             mask,
             clock,
             transcoder,
-            retention,
         }
     }
 
@@ -151,27 +147,24 @@ where
             correlation_id: None,
         };
         let mut db = self.pool.acquire().await.box_err()?;
-
-        if self.retention.all() {
-            let mut insert = command::insert(&self.table, &row);
-            let _ = insert.build().execute(&mut *db).await.box_err()?;
-        } else {
-            let mut tx = db.begin().await.box_err()?;
-            let mut delete = Sqlite::prune(&self.table, id, &*self.clock, &self.retention);
-            let mut insert = command::insert(&self.table, &row);
-            let _ = delete.build().execute(&mut *tx).await.box_err()?;
-            let _ = insert.build().execute(&mut *tx).await.box_err()?;
-            tx.commit().await.box_err()?;
-        }
+        let mut insert = command::insert(&self.table, &row);
+        let _ = insert.build().execute(&mut *db).await.box_err()?;
 
         Ok(())
     }
 
-    async fn delete(&self, id: &ID) -> Result<(), SnapshotError> {
+    async fn prune(&self, id: &ID, retention: Option<&Retention>) -> Result<(), SnapshotError> {
         let mut db = self.pool.acquire().await.box_err()?;
         let mut tx = db.begin().await.box_err()?;
-        let mut delete = super::event_command::delete(&self.table, id);
-        let _ = delete.build().execute(&mut *tx).await.box_err()?;
+
+        if let Some(retention) = retention {
+            let mut delete = Sqlite::prune(&self.table, id, &*self.clock, retention);
+            let _ = delete.build().execute(&mut *tx).await.box_err()?;
+        } else {
+            let mut delete = super::event_command::delete(&self.table, id);
+            let _ = delete.build().execute(&mut *tx).await.box_err()?;
+        }
+
         tx.commit().await.box_err()?;
         Ok(())
     }

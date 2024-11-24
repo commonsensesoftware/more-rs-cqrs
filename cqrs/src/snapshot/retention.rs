@@ -11,11 +11,6 @@ pub struct Retention {
 }
 
 impl Retention {
-    /// Gets a value indicating whether all snapshots are retained.
-    pub fn all(&self) -> bool {
-        self.count.is_none() && self.age.is_none()
-    }
-
     /// Initializes a new [`Retention`] that retains a fixed number of snapshots.
     ///
     /// # Arguments

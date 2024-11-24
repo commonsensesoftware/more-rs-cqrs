@@ -1,4 +1,4 @@
-use super::{coerce, greater_than, less_than, Builder};
+use super::{coerce, delete_all, greater_than, less_than, Builder};
 use crate::{
     version::new_version,
     BoxErr, NoSqlVersion,
@@ -505,18 +505,10 @@ where
         }
 
         if let Some(snapshots) = &self.snapshots {
-            snapshots.delete(id).await?;
+            snapshots.prune(id, None).await?;
         }
 
-        let request = self
-            .ddb
-            .delete_item()
-            .table_name(&self.table)
-            .condition_expression("(id = :id) AND (version >= :version)")
-            .expression_attribute_values(":id", S(id.to_string()))
-            .expression_attribute_values(":version", N(new_version(1, 0).sort_key().to_string()));
-
-        let _ = request.send().await.box_err()?;
+        delete_all(&self.ddb, &self.table, id.to_string(), None).await?;
         Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use super::{Predicate, Snapshot};
+use super::{Predicate, Retention, Snapshot};
 use crate::{
     event::StoreError,
     message::{Descriptor, EncodingError},
@@ -76,10 +76,15 @@ pub trait Store<T: Debug + Send = Uuid>: Send + Sync {
     /// * `snapshot` - the [snapshot](Snapshot) to save
     async fn save(&self, id: &T, snapshot: Box<dyn Snapshot>) -> Result<(), SnapshotError>;
 
-    /// Deletes the snapshots for the specified identifier.
+    /// Prunes snapshots for the specified identifier using the specified retention policy.
     /// 
     /// # Arguments
     ///
     /// * `id` - the identifier of the snapshots to delete
-    async fn delete(&self, id: &T) -> Result<(), SnapshotError>;
+    /// * `retention` - the optional [retention](Retention) policy
+    /// 
+    /// # Remarks
+    /// 
+    /// If a [retention](Retention) policy is unspecified, then all snapshots are deleted.
+    async fn prune(&self, id: &T, retention: Option<&Retention>) -> Result<(), SnapshotError>;
 }

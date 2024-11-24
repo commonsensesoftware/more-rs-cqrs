@@ -4,7 +4,7 @@ use aws_sdk_dynamodb::{config::Credentials, Client};
 use cqrs::{
     event::{Delete, Event},
     message::{Message, Transcoder},
-    snapshot::{Retention, Snapshot},
+    snapshot::Snapshot,
     Clock, Mask, WallClock,
 };
 use futures::executor;
@@ -40,7 +40,6 @@ pub struct Builder<ID, M: Message + ?Sized> {
     clock: Option<Arc<dyn Clock>>,
     transcoder: Option<Arc<Transcoder<M>>>,
     snapshots: Option<Arc<DynSnapshotStore<ID>>>,
-    retention: Option<Retention>,
 }
 
 impl<ID, M: Message + ?Sized> Default for Builder<ID, M> {
@@ -55,7 +54,6 @@ impl<ID, M: Message + ?Sized> Default for Builder<ID, M> {
             clock: Default::default(),
             transcoder: Default::default(),
             snapshots: Default::default(),
-            retention: Default::default(),
         }
     }
 }
@@ -196,16 +194,6 @@ impl<ID> Builder<ID, dyn Event> {
 }
 
 impl<ID> Builder<ID, dyn Snapshot> {
-    /// Configures the snapshot retention.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - the snapshot [retention](Retention) policy
-    pub fn retention<V: Into<Retention>>(mut self, value: V) -> Self {
-        self.retention = Some(value.into());
-        self
-    }
-
     /// Builds and returns a new [snapshot store](SnapshotStore).
     pub fn build(mut self) -> Result<SnapshotStore<ID>, BuilderError> {
         let client = self.resolve_client()?;
@@ -217,7 +205,6 @@ impl<ID> Builder<ID, dyn Snapshot> {
             self.mask,
             self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
             self.transcoder.unwrap_or_default(),
-            self.retention.unwrap_or_default(),
         ))
     }
 }

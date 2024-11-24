@@ -1,7 +1,7 @@
 use crate::{
     event::{self, Event, EventStream, IdStream, Predicate, StoreError},
     message::{Descriptor, Schema, Transcoder},
-    snapshot::{self, Snapshot, SnapshotError},
+    snapshot::{self, Retention, Snapshot, SnapshotError},
     Clock, Range, Version,
 };
 use async_trait::async_trait;
@@ -196,7 +196,7 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
         Ok(())
     }
 
-    async fn delete(&self, id: &T) -> Result<(), SnapshotError> {
+    async fn prune(&self, id: &T, _retention: Option<&Retention>) -> Result<(), SnapshotError> {       
         let _ = self.table.write().unwrap().remove(id);
         Ok(())
     }
@@ -349,8 +349,6 @@ fn select_version<T: Debug + Send>(
 #[async_trait]
 impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for EventStore<T> {
     async fn ids(&self, _stored_on: Range<SystemTime>) -> IdStream<T> {
-        // TODO: using a date range for an in-memory store requires additional thinking as the setup
-        // would be contrived with a virtual clock or have timestamps very, very close to each other.
         let table = self.table.read().unwrap();
         let ids: Vec<_> = table.keys().cloned().map(Ok).collect();
 
@@ -502,7 +500,7 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
 
     async fn delete(&self, id: &T) -> Result<(), StoreError<T>> {
         if let Some(snapshots) = &self.snapshots {
-            snapshots.delete(id).await?;
+            snapshots.prune(id, None).await?;
         }
 
         let _ = self.table.write().unwrap().remove(id);        

@@ -5,7 +5,7 @@ use cqrs::{
     di::AggregateBuilder,
     event::{self, Event},
     message::Transcoder,
-    snapshot::{self, Retention, Snapshot},
+    snapshot::{self, Snapshot},
     Aggregate, Clock, Mask, Repository,
 };
 use di::{
@@ -231,21 +231,7 @@ where
     /// In order to use a snapshot store which does not use Amazon DynamoDB, a keyed service must be registered in
     /// the [`ServiceCollection`] for a [`cqrs::snapshot::Store`] using the type of [`Aggregate`] as the key.
     #[inline]
-    pub fn snapshots(self) -> Self {
-        self.snapshots_with(Retention::default())
-    }
-
-    /// Configures Amazon DynamoDB storage with snapshots.
-    ///
-    /// # Arguments
-    ///
-    /// * `retention` - the [retention](Retention) policy applied to snapshots
-    ///
-    /// # Remarks
-    ///
-    /// In order to use a snapshot store which does not use Amazon DynamoDB, a keyed service must be registered in
-    /// the [`ServiceCollection`] for a [`cqrs::snapshot::Store`] using the type of [`Aggregate`] as the key.
-    pub fn snapshots_with(mut self, retention: Retention) -> Self {
+    pub fn snapshots(mut self) -> Self {
         let table = self.parent.table;
         let url;
         let credentials;
@@ -271,8 +257,7 @@ where
                     let mut builder = SnapshotStore::<A::ID>::builder()
                         .table(table)
                         .clock(sp.get_required::<dyn Clock>())
-                        .transcoder(sp.get_required::<Transcoder<dyn Snapshot>>())
-                        .retention(retention.clone());
+                        .transcoder(sp.get_required::<Transcoder<dyn Snapshot>>());
 
                     if let Some(mask) = mask.clone().or_else(|| sp.get::<dyn Mask>()) {
                         builder = builder.mask(mask);
