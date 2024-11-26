@@ -4,7 +4,7 @@ use crate::{
     SqlVersion,
 };
 use cqrs::{snapshot::Predicate, Mask};
-use sqlx::{Database, Encode, Executor, IntoArguments, QueryBuilder, Type};
+use sqlx::{Database, Encode, QueryBuilder, Type};
 use std::{fmt::Debug, sync::Arc};
 
 pub fn select<'a, ID, DB>(
@@ -19,7 +19,7 @@ where
     i32: Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
     i64: Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
 {
-    let mut select = QueryBuilder::new("SELECT version, sequence, type, revision, content ");
+    let mut select = QueryBuilder::new("SELECT version, type, revision, content ");
 
     select
         .push(" FROM ")
@@ -59,8 +59,6 @@ where
 pub fn insert<'a, ID, DB>(table: &'a sql::Ident<'a>, row: &'a sql::Row<ID>) -> QueryBuilder<'a, DB>
 where
     DB: Database + Upsert,
-    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
-    for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     ID: Encode<'a, DB> + Send + Type<DB> + 'a,
     i16: for<'db> Encode<'db, DB> + Type<DB>,
     i32: for<'db> Encode<'db, DB> + Type<DB>,

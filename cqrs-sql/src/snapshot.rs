@@ -1,4 +1,4 @@
-mod command;
+pub(crate) mod command;
 mod prune;
 mod store;
 mod upsert;

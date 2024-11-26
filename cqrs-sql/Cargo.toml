@@ -35,4 +35,14 @@ uuid = { workspace = true }
 serde = { workspace = true, optional = true }
 
 [dev-dependencies]
+more-cqrs = { path = "../cqrs", features = ["json"] }
+more-cqrs-sql = { path = ".", features = [
+    "di",
+    "migrate",
+    "postgres",
+    "sqlite",
+] }
 rstest = { workspace = true }
+serde = { workspace = true }
+testcontainers-modules = { version = "0.11.4", features = ["postgres"] }
+tokio = { workspace = true }

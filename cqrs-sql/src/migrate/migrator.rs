@@ -6,7 +6,7 @@ use sqlx::{
     pool::PoolOptions,
     Database,
 };
-use std::{error::Error, sync::Mutex};
+use std::{collections::HashMap, error::Error, sync::Mutex};
 
 /// Represents a SQL-base storage migrator.
 pub struct SqlStoreMigrator<DB>
@@ -39,22 +39,44 @@ where
         Self::default()
     }
 
-    /// Adds a new migration.
+    /// Configures a new migration.
     ///
     /// # Arguments
     ///
-    /// * `migration` - the [migration](Migration) to add
+    /// * `migration` - the [migration](Migration) to configure
     /// * `url` - the URL representing the database connection string
     /// * `options` - the [connection pool options](PoolOptions) to use during the migration
-    pub fn add<M, S>(&self, migration: M, url: S, options: PoolOptions<DB>)
+    #[inline]
+    pub fn configure<M, S>(&self, migration: M, url: S, options: PoolOptions<DB>)
     where
         M: Into<Migration>,
         S: AsRef<str>,
         DB: Database,
         DB::Connection: Migrate,
     {
-        let migration = SqlStoreMigration::new(migration, url, options);
-        self.migrations.lock().unwrap().push(migration);
+        self.add(SqlStoreMigration::new(migration, url, options));
+    }
+
+    /// Adds a migration.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `migration` - the [migration](SqlStoreMigration) to add
+    pub fn add(&self, migration: SqlStoreMigration<DB>)
+    where
+        DB: Database,
+        DB::Connection: Migrate,
+    {
+        let mut migrations = self.migrations.lock().unwrap();
+
+        for existing in migrations.iter_mut() {
+            if existing.version() == migration.version() && existing.url() == migration.url() {
+                existing.merge(migration);
+                return;
+            }
+        }
+
+        migrations.push(migration);
     }
 
     /// Runs the configured migrations.
@@ -77,10 +99,12 @@ where
 impl<DB> StoreMigration for SqlStoreMigrator<DB>
 where
     DB: Database,
-    DB::Connection: Migrate
+    DB::Connection: Migrate,
 {
     async fn run(&self) -> Result<(), Box<dyn Error + 'static>> {
-        self.run().await.map_err(|e| Box::new(e) as Box<dyn Error + 'static>)
+        self.run()
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn Error + 'static>)
     }
 }
 
@@ -96,8 +120,22 @@ cfg_if::cfg_if! {
         {
             #[inject]
             fn _new(migrations: impl Iterator<Item = Ref<SqlStoreMigration<DB>>>) -> Self {
+                let mut migrations: Vec<_> = migrations.filter_map(Ref::into_inner).collect();
+                let count = migrations.len();
+                let mut buckets: HashMap<String, SqlStoreMigration<DB>> = HashMap::with_capacity(count);
+
+                for migration in migrations.drain(..) {
+                    let key = migration.url().to_owned();
+
+                    if buckets.contains_key(&key) {
+                        buckets.entry(key).and_modify(|m| m.merge(migration));
+                    } else {
+                        buckets.entry(key).or_insert(migration);
+                    }
+                }
+
                 Self {
-                    migrations: Mutex::new(migrations.filter_map(Ref::into_inner).collect())
+                    migrations: Mutex::new(buckets.into_values().collect()),
                 }
             }
         }

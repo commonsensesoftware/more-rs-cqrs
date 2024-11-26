@@ -5,6 +5,7 @@ use sqlx::{
     pool::PoolOptions,
     Database, Pool,
 };
+use std::borrow::Cow;
 
 enum Either<DB: Database> {
     Pool(Pool<DB>),
@@ -65,6 +66,34 @@ where
         }
     }
 
+    /// Gets the URL representing the database connection string.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// Gets the migration version.
+    pub fn version(&self) -> i64 {
+        self.migration.version
+    }
+
+    /// Merges one migration into another.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - the other [migration](SqlStoreMigration) to merge
+    pub fn merge(&mut self, other: Self) {
+        let m1 = &self.migration;
+        let m2 = other.migration;
+
+        self.migration = Migration::new(
+            m1.version,
+            Cow::Owned(format!("{} {}", m1.description, m2.description)),
+            m1.migration_type,
+            Cow::Owned(format!("{}\n{}", m1.sql, m2.sql)),
+            m1.no_tx,
+        )
+    }
+
     /// Runs the migration.
     pub async fn run(self) -> Result<(), MigrateError> {
         let migrator = Migrator::new(Source(self.migration)).await?;
@@ -73,5 +102,11 @@ where
             Either::Options(options) => options.connect(&self.url).await?,
         };
         migrator.run(&pool).await
+    }
+}
+
+impl<DB: Database> From<SqlStoreMigration<DB>> for Migration {
+    fn from(value: SqlStoreMigration<DB>) -> Self {
+        value.migration
     }
 }

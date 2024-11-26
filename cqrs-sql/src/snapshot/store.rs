@@ -103,10 +103,9 @@ where
         predicate: Option<&Predicate>,
     ) -> Result<Option<Descriptor>, SnapshotError> {
         const VERSION: usize = 0;
-        const SEQUENCE: usize = 1;
-        const TYPE: usize = 2;
-        const REVISION: usize = 3;
-        const CONTENT: usize = 4;
+        const TYPE: usize = 1;
+        const REVISION: usize = 2;
+        const CONTENT: usize = 3;
 
         let mut db = self.pool.acquire().await.box_err()?;
         let mut query = command::select(&self.table, id, predicate, self.mask.clone());
@@ -115,7 +114,7 @@ where
         if let Some(result) = rows.next().await {
             let row = result.box_err()?;
             let schema = Schema::new(row.get::<&str, _>(TYPE), row.get::<i16, _>(REVISION) as u8);
-            let mut version = new_version(row.get::<i32, _>(VERSION), row.get::<i16, _>(SEQUENCE));
+            let mut version = new_version(row.get::<i32, _>(VERSION), 0);
             let content = row.get::<&[u8], _>(CONTENT);
 
             if let Some(mask) = &self.mask {

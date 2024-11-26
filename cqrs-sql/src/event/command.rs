@@ -3,8 +3,8 @@ use cqrs::{
     event::{Predicate, StoreError},
     Range,
 };
-use sqlx::{Database, Encode, Executor, IntoArguments, QueryBuilder, Transaction, Type};
-use std::{error::Error, fmt::Debug, time::SystemTime};
+use sqlx::{Database, Encode, Executor, FromRow, IntoArguments, QueryBuilder, Transaction, Type};
+use std::{error::Error, fmt::Debug, ops::Bound, time::SystemTime};
 
 #[inline]
 fn and_stored_on<'a, D>(builder: &mut QueryBuilder<'a, D>, (time, op): (SystemTime, &str))
@@ -57,7 +57,7 @@ where
 pub fn select<'a, ID, DB>(
     table: sql::Ident<'a>,
     predicate: Option<&'a Predicate<'a, ID>>,
-    version: Option<i32>,
+    version: Bound<i32>,
 ) -> QueryBuilder<'a, DB>
 where
     ID: Debug + Encode<'a, DB> + Send + Type<DB> + 'a,
@@ -88,14 +88,18 @@ where
             added = true;
         }
 
-        if let Some(version) = version {
+        if let Some((version, op)) = greater_than(&version) {
             add_where(&mut select, &mut added);
-            select.push("version = ").push_bind(version);
+            select
+                .push("version ")
+                .push(op)
+                .push(" ")
+                .push_bind(version);
         }
 
         if let Some(lower) = greater_than(&predicate.stored_on.from) {
             add_where(&mut select, &mut added);
-    
+
             if let Some(upper) = less_than(&predicate.stored_on.to) {
                 select.push('(');
                 and_stored_on(&mut select, lower);
@@ -111,10 +115,10 @@ where
         }
 
         let mut schemas = predicate.types.iter();
-        
+
         if let Some(schema) = schemas.next() {
             add_where(&mut select, &mut added);
-            
+
             let many = predicate.types.len() > 1;
 
             if many {
@@ -155,11 +159,35 @@ where
     select
 }
 
+pub fn exists<'a, ID, DB>(
+    table: &'a sql::Ident<'a>,
+    previous: &'a sql::Row<ID>,
+) -> QueryBuilder<'a, DB>
+where
+    DB: Database,
+    ID: Clone + Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
+    i32: for<'db> Encode<'db, DB> + Type<DB>,
+{
+    let mut select = QueryBuilder::new("SELECT EXISTS(SELECT 1 FROM ");
+
+    select
+        .push(table.quote())
+        .push(' ')
+        .push(" WHERE id = ")
+        .push_bind(&previous.id)
+        .push(" AND version = ")
+        .push_bind(previous.version)
+        .push(" AND sequence = 0")
+        .push(");");
+
+    select
+}
+
 pub fn insert<'a, ID, DB>(table: &'a sql::Ident<'a>, row: &'a sql::Row<ID>) -> QueryBuilder<'a, DB>
 where
     DB: Database,
-    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
-    for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
+    // for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
+    // for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     ID: Encode<'a, DB> + Send + Type<DB> + 'a,
     i16: for<'db> Encode<'db, DB> + Type<DB>,
     i32: for<'db> Encode<'db, DB> + Type<DB>,
@@ -238,25 +266,18 @@ where
     for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     ID: Clone + Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
-    i16: for<'db> Encode<'db, DB> + Type<DB>,
     i32: for<'db> Encode<'db, DB> + Type<DB>,
-    i64: for<'db> Encode<'db, DB> + Type<DB>,
-    String: for<'db> Encode<'db, DB> + Type<DB>,
-    for<'db> &'db [u8]: Encode<'db, DB> + Type<DB>,
+    (bool,): for<'db> FromRow<'db, DB::Row>,
 {
-    let mut insert = insert::<ID, DB>(table, previous);
+    let exists: bool = exists(table, previous)
+        .build_query_scalar()
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| StoreError::Unknown(Box::new(e) as Box<dyn Error + Send>))?;
 
-    if let Err(error) = insert.build().execute(&mut **tx).await {
-        if let sqlx::Error::Database(error) = &error {
-            if error.is_unique_violation() {
-                // the events before now still exist; e.g. not deleted
-                return Ok(());
-            }
-        }
-        return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
+    if exists {
+        Ok(())
+    } else {
+        Err(StoreError::Deleted(previous.id.clone()))
     }
-
-    // if the insert succeeds, then this means all of the events must have been
-    // deleted some time before the current save
-    Err(StoreError::Deleted(previous.id.clone()))
 }

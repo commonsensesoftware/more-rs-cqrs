@@ -6,7 +6,7 @@ const UNDERSCORE: char = '_';
 
 #[inline]
 fn all_allowed(text: &str) -> bool {
-    text.chars().all(|c| c.is_ascii_alphanumeric())
+    text.chars().all(|c| c.is_ascii_alphanumeric() || c == UNDERSCORE)
 }
 
 fn escape(text: &str) -> String {

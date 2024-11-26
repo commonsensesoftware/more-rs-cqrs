@@ -1,4 +1,4 @@
-use super::command;
+use super::{command, get_snapshot, select_version};
 use crate::{
     new_version,
     sql::{self, Context, Ident, IntoRows},
@@ -8,76 +8,15 @@ use async_stream::try_stream;
 use async_trait::async_trait;
 use cqrs::{
     event::{Delete, Event, EventStream, IdStream, Predicate, Store, StoreError},
-    message::{Descriptor, Schema, Transcoder},
-    snapshot::{self, SnapshotError},
-    Clock, Mask, Range, Version,
+    message::{Schema, Transcoder},
+    snapshot, Clock, Mask, Range, Version,
 };
 use futures::stream;
 use sqlx::{
-    ColumnIndex, Connection, Database, Decode, Encode, Executor,
-    IntoArguments, Pool, Row, Type,
+    ColumnIndex, Connection, Database, Decode, Encode, Executor, FromRow, IntoArguments, Pool, Row,
+    Type,
 };
-use std::{
-    error::Error,
-    fmt::Debug,
-    ops::Bound::{Excluded, Included},
-    sync::Arc,
-    time::SystemTime,
-};
-
-fn select_version<T: Debug + Send>(
-    snapshot: Option<&Descriptor>,
-    predicate: &Predicate<'_, T>,
-    mask: Option<Arc<dyn Mask>>,
-) -> Option<i32> {
-    if let Some(snapshot) = snapshot {
-        let version = if let Some(mask) = &mask {
-            snapshot.version.unmask((*mask).clone()).number()
-        } else {
-            snapshot.version.number()
-        };
-
-        match predicate.version {
-            Included(other) => {
-                let other = if let Some(mask) = &mask {
-                    other.unmask((*mask).clone()).number()
-                } else {
-                    other.number()
-                };
-
-                if other >= version {
-                    return Some(other);
-                }
-            }
-            Excluded(other) => {
-                let other = if let Some(mask) = &mask {
-                    other.unmask((*mask).clone()).number()
-                } else {
-                    other.number()
-                };
-
-                if other > version {
-                    return Some(other);
-                }
-            }
-            _ => {}
-        }
-
-        Some(version)
-    } else if let Some(mask) = mask {
-        match predicate.version {
-            Included(version) => Some(version.unmask(&mask).number()),
-            Excluded(version) => Some(version.unmask(&mask).number()),
-            _ => None,
-        }
-    } else {
-        match predicate.version {
-            Included(version) => Some(version.number()),
-            Excluded(version) => Some(version.number()),
-            _ => None,
-        }
-    }
-}
+use std::{error::Error, fmt::Debug, sync::Arc, ops::Bound, time::SystemTime};
 
 /// Represents a SQL [event store](Store).
 pub struct SqlStore<ID, DB: Database> {
@@ -127,30 +66,6 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
     }
 }
 
-impl<ID, DB> SqlStore<ID, DB>
-where
-    ID: Debug + Send,
-    DB: Database,
-{
-    async fn get_snapshot<'a>(
-        &self,
-        predicate: Option<&Predicate<'a, ID>>,
-    ) -> Result<Option<Descriptor>, SnapshotError> {
-        if let Some(snapshots) = &self.snapshots {
-            if let Some(predicate) = predicate {
-                if predicate.load.snapshots {
-                    if let Some(id) = predicate.id {
-                        let predicate = Some(predicate.into());
-                        return snapshots.load_raw(id, predicate.as_ref()).await;
-                    }
-                }
-            }
-        }
-
-        Ok(None)
-    }
-}
-
 #[async_trait]
 impl<ID, DB> Store<ID> for SqlStore<ID, DB>
 where
@@ -172,6 +87,7 @@ where
     String: for<'db> Encode<'db, DB> + Type<DB>,
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
+    (bool,): for<'db> FromRow<'db, DB::Row>,
 {
     fn clock(&self) -> Arc<dyn Clock> {
         self.clock.clone()
@@ -199,7 +115,7 @@ where
             Ok(db) => db,
             Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::Unknown(error))])),
         };
-        let snapshot = match self.get_snapshot(predicate).await {
+        let snapshot = match get_snapshot(self.snapshots.as_deref(), predicate).await {
             Ok(snapshot) => snapshot,
             Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::from(error))])),
         };
@@ -212,7 +128,7 @@ where
             const REVISION: usize = 1;
             const CONTENT: usize = 2;
 
-            let mut version = None;
+            let mut version = Bound::Unbounded;
 
             if let Some(filter) = predicate {
                 version = select_version(snapshot.as_ref(), filter, mask.clone());
@@ -253,7 +169,7 @@ where
         if events.is_empty() {
             return Ok(());
         }
-        
+
         if expected_version != Version::default() {
             if let Some(mask) = self.mask.clone() {
                 expected_version = expected_version.unmask(&mask);

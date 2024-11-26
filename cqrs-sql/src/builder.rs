@@ -44,6 +44,9 @@ where
     clock: Option<Arc<dyn Clock>>,
     transcoder: Option<Arc<Transcoder<M>>>,
     snapshots: Option<Arc<DynSnapshotStore<ID>>>,
+
+    #[cfg(feature = "sqlite")]
+    pub(crate) pool: Option<sqlx::Pool<Sqlite>>,
 }
 
 impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Event, DB> {
@@ -58,6 +61,9 @@ impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Event, DB> {
             clock: None,
             transcoder: None,
             snapshots: None,
+
+            #[cfg(feature = "sqlite")]
+            pool: None,
         }
     }
 }
@@ -74,6 +80,9 @@ impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Snapshot, DB> {
             clock: None,
             transcoder: None,
             snapshots: None,
+
+            #[cfg(feature = "sqlite")]
+            pool: None,
         }
     }
 }
@@ -150,6 +159,17 @@ where
     /// * `value` - the associated [transcoder](Transcoder)
     pub fn transcoder<V: Into<Arc<Transcoder<M>>>>(mut self, value: V) -> Self {
         self.transcoder = Some(value.into());
+        self
+    }
+
+    #[cfg(feature = "sqlite")]
+    /// Configures the database connection pool.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - the [connection pool](sqlx::Pool) for the underlying database
+    pub fn pool(mut self, value: sqlx::Pool<Sqlite>) -> Self {
+        self.pool = Some(value);
         self
     }
 }
@@ -239,18 +259,23 @@ cfg_if! {
             type Store = EventStore<ID>;
 
             fn build(self) -> Result<Self::Store, SqlStoreBuilderError> {
-                let url = self.url.ok_or(MissingUrl)?;
-                let options = self.options.unwrap_or_default();
+                let pool = if let Some(pool) = &self.pool {
+                    pool.clone()
+                } else {
+                    let url = self.url.ok_or(MissingUrl)?;
+                    let options = self.options.unwrap_or_default();
+                    options.connect_lazy(&url)?
+                };
                 let table = self.table.ok_or(MissingTable)?;
                 let table = if self.schema.is_empty() {
-                    Ident::unqualified(table)
+                    table.into()
                 } else {
-                    Ident::qualified(self.schema, table)
+                    format!("{}_{}", self.schema, table)
                 };
 
                 Ok(Self::Store::new(
                     table,
-                    options.connect_lazy(&url)?,
+                    pool,
                     self.mask,
                     self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
                     self.transcoder.unwrap_or_default(),
@@ -265,18 +290,23 @@ cfg_if! {
             type Store = SnapshotStore<ID>;
 
             fn build(self) -> Result<Self::Store, SqlStoreBuilderError> {
-                let url = self.url.ok_or(MissingUrl)?;
-                let options = self.options.unwrap_or_default();
+                let pool = if let Some(pool) = &self.pool {
+                    pool.clone()
+                } else {
+                    let url = self.url.ok_or(MissingUrl)?;
+                    let options = self.options.unwrap_or_default();
+                    options.connect_lazy(&url)?
+                };
                 let table = self.table.ok_or(MissingTable)?;
                 let table = if self.schema.is_empty() {
-                    Ident::unqualified(table)
+                    table.into()
                 } else {
-                    Ident::qualified(self.schema, table)
+                    format!("{}_{}", self.schema, table)
                 };
 
                 Ok(Self::Store::new(
                     table,
-                    options.connect_lazy(&url)?,
+                    pool,
                     self.mask,
                     self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
                     self.transcoder.unwrap_or_default(),

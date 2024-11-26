@@ -35,7 +35,7 @@ pub struct Row<ID> {
 
 impl<ID: Clone> Row<ID> {
     pub fn previous(&self) -> Option<Self> {
-        if self.version == 1 {
+        if self.version < 2 {
             None
         } else {
             Some(Self {

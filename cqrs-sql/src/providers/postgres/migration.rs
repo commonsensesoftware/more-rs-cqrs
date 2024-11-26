@@ -12,13 +12,13 @@ use std::borrow::Cow;
 use std::mem::size_of;
 
 /// Represents a Postgres [migrator](SqlStoreMigrator).
-pub type PostgresMigrator = SqlStoreMigrator<Postgres>;
+pub type Migrator = SqlStoreMigrator<Postgres>;
 
 impl<ID> From<&postgres::EventStore<ID>> for Migration {
     fn from(value: &postgres::EventStore<ID>) -> Self {
         Self::new(
             1,
-            Cow::Owned(format!("'{}' events table", value.table.name())),
+            Cow::Owned(format!("'{}' events table.", value.table.name())),
             Simple,
             Cow::Owned(events_table(&value.table, db_type::<ID>())),
             false,
@@ -30,7 +30,7 @@ impl<ID> From<&postgres::SnapshotStore<ID>> for Migration {
     fn from(value: &postgres::SnapshotStore<ID>) -> Self {
         Self::new(
             1,
-            Cow::Owned(format!("'{}' snapshots table", value.table.name())),
+            Cow::Owned(format!("'{}' snapshots table.", value.table.name())),
             Simple,
             Cow::Owned(snapshots_table(&value.table, db_type::<ID>())),
             false,
@@ -79,7 +79,7 @@ fn events_table(table: &Ident, db_type: &str) -> String {
     sql.push_str("type VARCHAR(128) NOT NULL, ");
     sql.push_str("content BYTEA NOT NULL, ");
     sql.push_str("correlation_id VARCHAR(50) DEFAULT NULL, ");
-    sql.push_str("PRIMARY KEY (id, version, sequence)");
+    sql.push_str("PRIMARY KEY(id, version, sequence)");
     sql.push_str(");");
 
     sql
@@ -106,7 +106,7 @@ fn snapshots_table(table: &Ident, db_type: &str) -> String {
     sql.push_str("type VARCHAR(128) NOT NULL, ");
     sql.push_str("content BYTEA NOT NULL, ");
     sql.push_str("correlation_id VARCHAR(50) DEFAULT NULL, ");
-    sql.push_str("PRIMARY KEY (id, version)");
+    sql.push_str("PRIMARY KEY(id, version)");
     sql.push_str(");");
 
     sql

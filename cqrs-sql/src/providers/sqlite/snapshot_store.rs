@@ -1,7 +1,6 @@
-use super::snapshot_command as command;
 use crate::{
     new_version,
-    snapshot::Prune,
+    snapshot::{command, Prune},
     sql::{self, Ident},
     BoxErr, SqlStoreBuilder, SqlVersion,
 };
@@ -18,7 +17,7 @@ use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 /// Represents a SQLite [snapshot store](Store).
 pub struct SnapshotStore<ID> {
     _id: PhantomData<ID>,
-    pub(crate) table: Ident<'static>,
+    table: String,
     pub(crate) pool: Pool<Sqlite>,
     mask: Option<Arc<dyn Mask>>,
     clock: Arc<dyn Clock>,
@@ -30,13 +29,13 @@ impl<ID> SnapshotStore<ID> {
     ///
     /// # Arguments
     ///
-    /// * `table` - the table [identifier](Ident)
+    /// * `table` - the table identifier
     /// * `pool` - the underlying [connection pool](Pool)
     /// * `mask` - the [mask](Mask) used to obfuscate [versions](Version)
     /// * `clock` - the associated [clock](Clock)
     /// * `transcoder` - the associated [transcoder](Transcoder)
     pub fn new(
-        table: Ident<'static>,
+        table: String,
         pool: Pool<Sqlite>,
         mask: Option<Arc<dyn Mask>>,
         clock: Arc<dyn Clock>,
@@ -55,6 +54,10 @@ impl<ID> SnapshotStore<ID> {
     /// Creates and returns a new [`SqlStoreBuilder`].
     pub fn builder() -> SqlStoreBuilder<ID, dyn Snapshot, Sqlite> {
         SqlStoreBuilder::default()
+    }
+
+    pub(crate) fn table(&self) -> Ident<'_> {
+        Ident::unqualified(&self.table)
     }
 }
 
@@ -93,19 +96,18 @@ where
         predicate: Option<&Predicate>,
     ) -> Result<Option<Descriptor>, SnapshotError> {
         const VERSION: usize = 0;
-        const SEQUENCE: usize = 1;
-        const TYPE: usize = 2;
-        const REVISION: usize = 3;
-        const CONTENT: usize = 4;
+        const TYPE: usize = 1;
+        const REVISION: usize = 2;
+        const CONTENT: usize = 3;
 
         let mut db = self.pool.acquire().await.box_err()?;
-        let mut query = command::select(&self.table, id, predicate, self.mask.clone());
+        let mut query = command::select(&self.table(), id, predicate, self.mask.clone());
         let mut rows = query.build().fetch(&mut *db);
 
         if let Some(result) = rows.next().await {
             let row = result.box_err()?;
             let schema = Schema::new(row.get::<&str, _>(TYPE), row.get::<i16, _>(REVISION) as u8);
-            let mut version = new_version(row.get::<i32, _>(VERSION), row.get::<i16, _>(SEQUENCE));
+            let mut version = new_version(row.get::<i32, _>(VERSION), 0);
             let content = row.get::<&[u8], _>(CONTENT);
 
             if let Some(mask) = &self.mask {
@@ -147,7 +149,8 @@ where
             correlation_id: None,
         };
         let mut db = self.pool.acquire().await.box_err()?;
-        let mut insert = command::insert(&self.table, &row);
+        let table = self.table();
+        let mut insert = command::insert(&table, &row);
         let _ = insert.build().execute(&mut *db).await.box_err()?;
 
         Ok(())
@@ -156,12 +159,13 @@ where
     async fn prune(&self, id: &ID, retention: Option<&Retention>) -> Result<(), SnapshotError> {
         let mut db = self.pool.acquire().await.box_err()?;
         let mut tx = db.begin().await.box_err()?;
+        let table = self.table();
 
         if let Some(retention) = retention {
-            let mut delete = Sqlite::prune(&self.table, id, &*self.clock, retention);
+            let mut delete = Sqlite::prune(&table, id, &*self.clock, retention);
             let _ = delete.build().execute(&mut *tx).await.box_err()?;
         } else {
-            let mut delete = super::event_command::delete(&self.table, id);
+            let mut delete = sql::command::delete(&table, id);
             let _ = delete.build().execute(&mut *tx).await.box_err()?;
         }
 

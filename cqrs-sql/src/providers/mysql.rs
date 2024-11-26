@@ -70,6 +70,6 @@ pub type SnapshotStore<ID> = snapshot::SqlStore<ID, MySql>;
 cfg_if::cfg_if! {
     if #[cfg(feature = "migrate")] {
         mod migration;
-        pub use migration::MySqlMigrator;
+        pub use migration::Migrator;
     }
 }

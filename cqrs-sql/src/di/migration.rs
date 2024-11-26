@@ -9,7 +9,7 @@ use di::{exactly_one, transient_as_self, zero_or_one, zero_or_one_with_key, Inje
 use options::OptionsSnapshot;
 use sqlx::{
     migrate::{Migrate, Migration},
-    ColumnIndex, Database, Decode, Encode, Executor, IntoArguments, Type,
+    ColumnIndex, Database, Decode, Encode, Executor, FromRow, IntoArguments, Type,
 };
 
 /// Represents the configuration for SQL storage migration.
@@ -30,6 +30,7 @@ where
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
     for<'c> &'c event::SqlStore<A::ID, DB>: Into<Migration>,
     for<'c> &'c snapshot::SqlStore<A::ID, DB>: Into<Migration>,
+    (bool,): for<'db> FromRow<'db, DB::Row>,
 {
     parent: SqlStoreOptionsBuilder<'a, A, DB>,
 }
@@ -51,6 +52,7 @@ where
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
     for<'c> &'c event::SqlStore<A::ID, DB>: Into<Migration>,
     for<'c> &'c snapshot::SqlStore<A::ID, DB>: Into<Migration>,
+    (bool,): for<'db> FromRow<'db, DB::Row>,
 {
     pub(crate) fn new(parent: SqlStoreOptionsBuilder<'a, A, DB>) -> Self {
         parent
@@ -78,6 +80,7 @@ where
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
     for<'c> &'c event::SqlStore<A::ID, DB>: Into<Migration>,
     for<'c> &'c snapshot::SqlStore<A::ID, DB>: Into<Migration>,
+    (bool,): for<'db> FromRow<'db, DB::Row>,
 {
     fn drop(&mut self) {
         let name = self.parent.parent.name;

@@ -6,7 +6,7 @@ use std::time::UNIX_EPOCH;
 impl snapshot::Upsert for Postgres {
     fn on_conflict() -> &'static str {
         concat!(
-            "ON CONFLICT (id) DO UPDATE SET ",
+            "ON CONFLICT (id, version) DO UPDATE SET ",
             "taken_on = EXCLUDED.taken_on, ",
             "revision = EXCLUDED.revision, ",
             "type = EXCLUDED.type"
@@ -69,6 +69,6 @@ pub type SnapshotStore<ID> = snapshot::SqlStore<ID, Postgres>;
 cfg_if::cfg_if! {
     if #[cfg(feature = "migrate")] {
         mod migration;
-        pub use migration::PostgresMigrator;
+        pub use migration::Migrator;
     }
 }

@@ -16,7 +16,7 @@ use di::{
 };
 use options::OptionsSnapshot;
 use sqlx::{
-    pool::PoolOptions, ColumnIndex, Database, Decode, Encode, Executor, IntoArguments, Type,
+    pool::PoolOptions, ColumnIndex, Database, Decode, Encode, Executor, FromRow, IntoArguments, Type
 };
 use std::{any::type_name, marker::PhantomData, sync::Arc};
 
@@ -35,6 +35,7 @@ where
     String: for<'db> Encode<'db, DB> + Type<DB>,
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
+    (bool,): for<'db> FromRow<'db, DB::Row>,
 {
     pub(crate) services: &'a mut ServiceCollection,
     pub(crate) name: &'static str,
@@ -56,6 +57,7 @@ where
     String: for<'db> Encode<'db, DB> + Type<DB>,
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
+    (bool,): for<'db> FromRow<'db, DB::Row>,
 {
     /// Initializes a new [`SqlStoreBuilder`].
     ///
@@ -101,6 +103,7 @@ where
     String: for<'db> Encode<'db, DB> + Type<DB>,
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
+    (bool,): for<'db> FromRow<'db, DB::Row>,
 {
     fn drop(&mut self) {
         let name = self.name;
@@ -149,6 +152,7 @@ where
     String: for<'db> Encode<'db, DB> + Type<DB>,
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
+    (bool,): for<'db> FromRow<'db, DB::Row>,
 {
     pub(crate) parent: SqlStoreBuilder<'a, A, DB>,
     pub(crate) url: Option<String>,
@@ -172,6 +176,7 @@ where
     String: for<'db> Encode<'db, DB> + Type<DB>,
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
+    (bool,): for<'db> FromRow<'db, DB::Row>,
 {
     fn new(parent: SqlStoreBuilder<'a, A, DB>) -> Self {
         Self {
@@ -260,6 +265,7 @@ where
     String: for<'db> Encode<'db, DB> + Type<DB>,
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
+    (bool,): for<'db> FromRow<'db, DB::Row>,
 {
     /// Configures storage with SQL-based snapshots.
     ///
@@ -320,6 +326,7 @@ where
     String: for<'db> Encode<'db, DB> + Type<DB>,
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
+    (bool,): for<'db> FromRow<'db, DB::Row>,
 {
     fn drop(&mut self) {
         let name = self.parent.name;
@@ -389,6 +396,7 @@ cfg_if! {
             for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
             for<'c> &'c event::SqlStore<A::ID, DB>: Into<Migration>,
             for<'c> &'c snapshot::SqlStore<A::ID, DB>: Into<Migration>,
+            (bool,): for<'db> FromRow<'db, DB::Row>,
         {
             /// Configures the database to use migrations.
             pub fn migrations(self) -> SqlMigrationsBuilder<'a, A, DB> {

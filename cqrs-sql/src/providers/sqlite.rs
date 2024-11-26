@@ -1,6 +1,5 @@
-mod event_command;
+mod command;
 mod event_store;
-mod snapshot_command;
 mod snapshot_store;
 
 pub use event_store::EventStore;
@@ -14,7 +13,7 @@ use std::time::UNIX_EPOCH;
 impl snapshot::Upsert for Sqlite {
     fn on_conflict() -> &'static str {
         concat!(
-            "ON CONFLICT (id) DO UPDATE SET ",
+            "ON CONFLICT (id, version) DO UPDATE SET ",
             "taken_on = EXCLUDED.taken_on, ",
             "revision = EXCLUDED.revision, ",
             "type = EXCLUDED.type"
@@ -64,6 +63,6 @@ where
 cfg_if::cfg_if! {
     if #[cfg(feature = "migrate")] {
         mod migration;
-        pub use migration::SqliteMigrator;
+        pub use migration::Migrator;
     }
 }

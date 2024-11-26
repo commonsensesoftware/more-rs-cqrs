@@ -8,15 +8,15 @@ use std::any::type_name;
 use std::borrow::Cow;
 
 /// Represents a SQLite [migrator](SqlStoreMigrator).
-pub type SqliteMigrator = SqlStoreMigrator<Sqlite>;
+pub type Migrator = SqlStoreMigrator<Sqlite>;
 
 impl<ID> From<&sqlite::EventStore<ID>> for Migration {
     fn from(value: &sqlite::EventStore<ID>) -> Self {
         Self::new(
             1,
-            Cow::Owned(format!("'{}' events table", value.table.name())),
+            Cow::Owned(format!("'{}' events table.", value.table().name())),
             Simple,
-            Cow::Owned(events_table(&value.table, db_type::<ID>())),
+            Cow::Owned(events_table(&value.table(), db_type::<ID>())),
             false,
         )
     }
@@ -26,9 +26,9 @@ impl<ID> From<&sqlite::SnapshotStore<ID>> for Migration {
     fn from(value: &sqlite::SnapshotStore<ID>) -> Self {
         Self::new(
             1,
-            Cow::Owned(format!("'{}' snapshots table", value.table.name())),
+            Cow::Owned(format!("'{}' snapshots table.", value.table().name())),
             Simple,
-            Cow::Owned(snapshots_table(&value.table, db_type::<ID>())),
+            Cow::Owned(snapshots_table(&value.table(), db_type::<ID>())),
             false,
         )
     }
@@ -52,7 +52,7 @@ fn events_table(table: &Ident, db_type: &str) -> String {
     let mut sql = String::new();
 
     sql.push_str("CREATE TABLE IF NOT EXISTS ");
-    sql.push_str(&table.as_object_name());
+    sql.push_str(&table.quote());
     sql.push('(');
     sql.push_str("id ");
     sql.push_str(db_type);
@@ -64,7 +64,7 @@ fn events_table(table: &Ident, db_type: &str) -> String {
     sql.push_str("type TEXT NOT NULL, ");
     sql.push_str("content BLOB NOT NULL, ");
     sql.push_str("correlation_id TEXT DEFAULT NULL, ");
-    sql.push_str("PRIMARY KEY (id, version, sequence)");
+    sql.push_str("PRIMARY KEY(id, version, sequence)");
     sql.push_str(");");
 
     sql
@@ -74,7 +74,7 @@ fn snapshots_table(table: &Ident, db_type: &str) -> String {
     let mut sql = String::new();
 
     sql.push_str("CREATE TABLE IF NOT EXISTS ");
-    sql.push_str(&table.as_object_name());
+    sql.push_str(&table.quote());
     sql.push('(');
     sql.push_str("id ");
     sql.push_str(db_type);
@@ -85,7 +85,7 @@ fn snapshots_table(table: &Ident, db_type: &str) -> String {
     sql.push_str("type TEXT NOT NULL, ");
     sql.push_str("content BLOB NOT NULL, ");
     sql.push_str("correlation_id TEXT DEFAULT NULL, ");
-    sql.push_str("PRIMARY KEY (id, version)");
+    sql.push_str("PRIMARY KEY(id, version)");
     sql.push_str(");");
 
     sql

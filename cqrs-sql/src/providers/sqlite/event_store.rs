@@ -1,158 +1,26 @@
-use super::event_command as command;
+use super::command as cmd;
 use crate::{
+    event::{command, get_snapshot, select_version},
     new_version,
-    sql::{Context, Ident, IntoRows},
+    sql::{self, Context, Ident, IntoRows},
     BoxErr, SqlStoreBuilder, SqlVersion, SqlVersionPart,
 };
 use async_stream::try_stream;
 use async_trait::async_trait;
 use cqrs::{
     event::{Delete, Event, EventStream, IdStream, Predicate, Store, StoreError},
-    message::{Descriptor, Schema, Transcoder},
-    snapshot::{self, SnapshotError},
-    Clock, Mask, Range, Version,
+    message::{Schema, Transcoder},
+    snapshot, Clock, Mask, Range, Version,
 };
-use futures::{stream, Stream};
+use futures::stream;
 use sqlx::Sqlite;
-use sqlx::{pool::PoolConnection, Connection, Decode, Encode, Pool, Row, Type};
-use std::{
-    error::Error,
-    fmt::Debug,
-    ops::Bound::{Excluded, Included},
-    sync::Arc,
-    time::SystemTime,
-};
-
-fn select_version<T: Debug + Send>(
-    snapshot: Option<&Descriptor>,
-    predicate: &Predicate<'_, T>,
-    mask: Option<Arc<dyn Mask>>,
-) -> Option<i32> {
-    if let Some(snapshot) = snapshot {
-        let version = if let Some(mask) = &mask {
-            snapshot.version.unmask((*mask).clone()).number()
-        } else {
-            snapshot.version.number()
-        };
-
-        match predicate.version {
-            Included(other) => {
-                let other = if let Some(mask) = &mask {
-                    other.unmask((*mask).clone()).number()
-                } else {
-                    other.number()
-                };
-
-                if other >= version {
-                    return Some(other);
-                }
-            }
-            Excluded(other) => {
-                let other = if let Some(mask) = &mask {
-                    other.unmask((*mask).clone()).number()
-                } else {
-                    other.number()
-                };
-
-                if other > version {
-                    return Some(other);
-                }
-            }
-            _ => {}
-        }
-
-        Some(version)
-    } else if let Some(mask) = mask {
-        match predicate.version {
-            Included(version) => Some(version.unmask(&mask).number()),
-            Excluded(version) => Some(version.unmask(&mask).number()),
-            _ => None,
-        }
-    } else {
-        match predicate.version {
-            Included(version) => Some(version.number()),
-            Excluded(version) => Some(version.number()),
-            _ => None,
-        }
-    }
-}
-
-fn distinct_ids<ID>(
-    mut db: PoolConnection<Sqlite>,
-    ident: Ident,
-    stored_on: Range<SystemTime>,
-) -> impl Stream<Item = Result<ID, StoreError<ID>>> + Send + '_
-where
-    ID: Debug + for<'db> Decode<'db, Sqlite> + Send + Sync + Type<Sqlite> + 'static,
-{
-    try_stream! {
-        let mut query = command::select_id(ident, stored_on);
-        let rows = query.build().fetch(&mut *db);
-
-        for await row in rows {
-            yield row.box_err()?.get::<ID, _>(0);
-        }
-    }
-}
-
-fn query<'a, ID>(
-    mut db: PoolConnection<Sqlite>,
-    ident: Ident<'a>,
-    predicate: Option<&'a Predicate<'a, ID>>,
-    mask: Option<Arc<dyn Mask>>,
-    transcoder: Arc<Transcoder<dyn Event>>,
-    snapshot: Option<Descriptor>,
-) -> impl Stream<Item = Result<Box<dyn Event>, StoreError<ID>>> + Send + 'a
-where
-    ID: Debug
-        + for<'db> Decode<'db, Sqlite>
-        + for<'db> Encode<'db, Sqlite>
-        + Send
-        + Sync
-        + Type<Sqlite>
-        + 'a,
-{
-    const TYPE: usize = 0;
-    const REVISION: usize = 1;
-    const CONTENT: usize = 2;
-
-    try_stream! {
-        let mut version = None;
-
-        if let Some(filter) = predicate {
-            version = select_version(snapshot.as_ref(), filter, mask.clone());
-
-            if let Some(snapshot) = snapshot {
-                let event = transcoder.decode(&snapshot.schema, &snapshot.content)?;
-                yield event;
-            }
-        }
-
-        let mut query = command::select(ident, predicate, version);
-        let rows = query.build().fetch(&mut *db);
-
-        for await result in rows {
-            let row = result.box_err()?;
-            let schema = Schema::new(
-                row.get::<&str, _>(TYPE),
-                row.get::<i16, _>(REVISION) as u8,
-            );
-            let content = row.get::<&[u8], _>(CONTENT);
-            let mut event = transcoder.decode(&schema, content)?;
-
-            if let Some(mask) = &mask {
-                event.set_version(event.version().mask(mask));
-            }
-
-            yield event;
-        }
-    }
-}
+use sqlx::{Connection, Decode, Encode, Pool, Row, Type};
+use std::{error::Error, fmt::Debug, ops::Bound::Unbounded, sync::Arc, time::SystemTime};
 
 /// Represents a SQLite [event store](Store).
 pub struct EventStore<ID> {
     delete: Delete,
-    pub(crate) table: Ident<'static>,
+    table: String,
     pub(crate) pool: Pool<Sqlite>,
     mask: Option<Arc<dyn Mask>>,
     clock: Arc<dyn Clock>,
@@ -165,14 +33,14 @@ impl<ID> EventStore<ID> {
     ///
     /// # Arguments
     ///
-    /// * `table` - the table [identifier](Ident)
+    /// * `table` - the table identifier
     /// * `pool` - the underlying [connection pool](Pool)
     /// * `mask` - the optional [mask](Mask) used to obfuscate [versions](Version)
     /// * `clock` - the associated [clock](Clock)
     /// * `transcoder` - the associated [transcoder](Transcoder)
     /// * `delete` - indicates whether [deletes](Delete) are supported
     pub fn new(
-        table: Ident<'static>,
+        table: String,
         pool: Pool<Sqlite>,
         mask: Option<Arc<dyn Mask>>,
         clock: Arc<dyn Clock>,
@@ -195,25 +63,9 @@ impl<ID> EventStore<ID> {
     pub fn builder() -> SqlStoreBuilder<ID, dyn Event, Sqlite> {
         SqlStoreBuilder::default()
     }
-}
 
-impl<ID: Debug + Send> EventStore<ID> {
-    async fn get_snapshot<'a>(
-        &self,
-        predicate: Option<&Predicate<'a, ID>>,
-    ) -> Result<Option<Descriptor>, SnapshotError> {
-        if let Some(snapshots) = &self.snapshots {
-            if let Some(predicate) = predicate {
-                if predicate.load.snapshots {
-                    if let Some(id) = predicate.id {
-                        let predicate = Some(predicate.into());
-                        return snapshots.load_raw(id, predicate.as_ref()).await;
-                    }
-                }
-            }
-        }
-
-        Ok(None)
+    pub(crate) fn table(&self) -> Ident<'_> {
+        Ident::unqualified(&self.table)
     }
 }
 
@@ -234,29 +86,72 @@ where
     }
 
     async fn ids(&self, stored_on: Range<SystemTime>) -> IdStream<ID> {
-        let db = match self.pool.acquire().await.box_err() {
+        let mut db = match self.pool.acquire().await.box_err() {
             Ok(db) => db,
             Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::Unknown(error))])),
         };
-        let table = self.table.clone();
+        let name = self.table.clone();
 
-        Box::pin(distinct_ids(db, table, stored_on))
+        Box::pin(try_stream! {
+            let table = Ident::unqualified(&name);
+            let mut query = command::select_id(table, stored_on);
+            let rows = query.build().fetch(&mut *db);
+
+            for await row in rows {
+                yield row.box_err()?.get::<ID, _>(0);
+            }
+        })
     }
 
     async fn load<'a>(&self, predicate: Option<&'a Predicate<'a, ID>>) -> EventStream<'a, ID> {
-        let db = match self.pool.acquire().await.box_err() {
+        let mut db = match self.pool.acquire().await.box_err() {
             Ok(db) => db,
             Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::Unknown(error))])),
         };
-        let snapshot = match self.get_snapshot(predicate).await {
+        let snapshot = match get_snapshot(self.snapshots.as_deref(), predicate).await {
             Ok(snapshot) => snapshot,
             Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::from(error))])),
         };
-        let table = self.table.clone();
+        let name = self.table.clone();
         let mask = self.mask.clone();
         let transcoder = self.transcoder.clone();
 
-        Box::pin(query(db, table, predicate, mask, transcoder, snapshot))
+        Box::pin(try_stream! {
+            const TYPE: usize = 0;
+            const REVISION: usize = 1;
+            const CONTENT: usize = 2;
+
+            let mut version = Unbounded;
+
+            if let Some(filter) = predicate {
+                version = select_version(snapshot.as_ref(), filter, mask.clone());
+
+                if let Some(snapshot) = snapshot {
+                    let event = transcoder.decode(&snapshot.schema, &snapshot.content)?;
+                    yield event;
+                }
+            }
+
+            let table = Ident::unqualified(&name);
+            let mut query = command::select(table, predicate, version);
+            let rows = query.build().fetch(&mut *db);
+
+            for await result in rows {
+                let row = result.box_err()?;
+                let schema = Schema::new(
+                    row.get::<&str, _>(TYPE),
+                    row.get::<i16, _>(REVISION) as u8,
+                );
+                let content = row.get::<&[u8], _>(CONTENT);
+                let mut event = transcoder.decode(&schema, content)?;
+
+                if let Some(mask) = &mask {
+                    event.set_version(event.version().mask(mask));
+                }
+
+                yield event;
+            }
+        })
     }
 
     async fn save(
@@ -275,6 +170,7 @@ where
             return Err(StoreError::InvalidVersion);
         }
 
+        let table = self.table();
         let mut versions = Vec::with_capacity(events.len());
         let context = Context {
             id: id.clone(),
@@ -297,19 +193,19 @@ where
 
             if self.delete.supported() {
                 if let Some(previous) = first.previous() {
-                    command::ensure_not_deleted(&self.table, &previous, &mut tx).await?;
+                    cmd::ensure_not_deleted(&table, &previous, &mut tx).await?;
                 }
             }
 
-            command::insert_transacted(&self.table, &first, &mut tx).await?;
-            command::insert_transacted(&self.table, &second, &mut tx).await?;
+            cmd::insert_transacted(&table, &first, &mut tx).await?;
+            cmd::insert_transacted(&table, &second, &mut tx).await?;
 
             versions.push(new_version(first.version, first.sequence));
             versions.push(new_version(second.version, second.sequence));
 
             for row in rows {
                 let row = row?;
-                command::insert_transacted(&self.table, &row, &mut tx).await?;
+                cmd::insert_transacted(&table, &row, &mut tx).await?;
                 versions.push(new_version(row.version, row.sequence));
             }
 
@@ -321,15 +217,15 @@ where
                 if let Some(previous) = first.previous() {
                     let mut tx = db.begin().await.box_err()?;
 
-                    command::ensure_not_deleted(&self.table, &previous, &mut tx).await?;
-                    command::insert_transacted(&self.table, &first, &mut tx).await?;
+                    cmd::ensure_not_deleted(&table, &previous, &mut tx).await?;
+                    cmd::insert_transacted(&table, &first, &mut tx).await?;
                     tx.commit().await.box_err()?;
                     execute = false;
                 }
             }
 
             if execute {
-                let mut insert = command::insert(&self.table, &first);
+                let mut insert = command::insert(&table, &first);
 
                 if let Err(error) = insert.build().execute(&mut *db).await {
                     if let sqlx::Error::Database(error) = &error {
@@ -362,14 +258,19 @@ where
             return Err(StoreError::Unsupported);
         }
 
-        let mut db = self.pool.acquire().await.box_err()?;
-        let mut tx = db.begin().await.box_err()?;
-        let mut delete = command::delete(&self.table, id);
-        let _ = delete.build().execute(&mut *tx).await.box_err()?;
-
+        // using a nested transaction, especially in an async context, can cause sqlite to deadlock.
+        // sqlx doesn't appear to provide any extra protections. it's unclear if savepoints will make
+        // any difference. snapshots are intrinsically volatile so delete them first. if deleting the
+        // events somehow fail, things are still in a recoverable state
         if let Some(snapshots) = &self.snapshots {
             snapshots.prune(id, None).await?;
         }
+
+        let mut db = self.pool.acquire().await.box_err()?;
+        let mut tx = db.begin().await.box_err()?;
+        let table = self.table();
+        let mut delete = sql::command::delete(&table, id);
+        let _ = delete.build().execute(&mut *tx).await.box_err()?;
 
         tx.commit().await.box_err()?;
         Ok(())
