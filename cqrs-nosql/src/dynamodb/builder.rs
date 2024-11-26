@@ -1,6 +1,7 @@
 use self::BuilderError::*;
 use super::{EventStore, SnapshotStore};
-use aws_sdk_dynamodb::{config::Credentials, Client};
+use aws_config::SdkConfig;
+use aws_sdk_dynamodb::Client;
 use cqrs::{
     event::{Delete, Event},
     message::{Message, Transcoder},
@@ -19,21 +20,12 @@ pub enum BuilderError {
     /// Indicates the target table is missing because it has not been configured.
     #[error("a table has not been configured")]
     MissingTable,
-
-    /// Indicates the endpoint URL is missing because it has not been configured.
-    #[error("an endpoint URL has not been configured")]
-    MissingUrl,
-
-    /// Indicates authentication credentials are missing because they have not been configured.
-    #[error("authentication credentials have not been configured")]
-    MissingCredentials,
 }
 
 /// Represents builder for Amazon DynamoDB stores.
 pub struct Builder<ID, M: Message + ?Sized> {
     table: Option<&'static str>,
-    url: Option<String>,
-    credentials: Option<Credentials>,
+    config: Option<SdkConfig>,
     client: Option<Client>,
     delete: Delete,
     mask: Option<Arc<dyn Mask>>,
@@ -46,8 +38,7 @@ impl<ID, M: Message + ?Sized> Default for Builder<ID, M> {
     fn default() -> Self {
         Self {
             table: Default::default(),
-            url: Default::default(),
-            credentials: Default::default(),
+            config: Default::default(),
             client: Default::default(),
             delete: Default::default(),
             mask: Default::default(),
@@ -69,31 +60,17 @@ impl<ID, M: Message + ?Sized> Builder<ID, M> {
         self
     }
 
-    /// Configures the service endpoint URL.
+    /// Configures the service configuration.
     ///
     /// # Arguments
     ///
-    /// * `value` - the endpoint URL
+    /// * `value` - the service [configuration](SdkConfig)
     ///
     /// # Remarks
     ///
-    /// Configuring a URL has no effect if a [`Self::client`] is specified.
-    pub fn url<V: Into<String>>(mut self, value: V) -> Self {
-        self.url = Some(value.into());
-        self
-    }
-
-    /// Configures the authentication credentials.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - the authentication [credentials](Credentials)
-    ///
-    /// # Remarks
-    ///
-    /// Configuring credentials has no effect if a [`Self::client`] is specified.
-    pub fn credentials<V: Into<Credentials>>(mut self, value: V) -> Self {
-        self.credentials = Some(value.into());
+    /// Providing a configuration has no effect if a [`Self::client`] is specified.
+    pub fn config(mut self, value: SdkConfig) -> Self {
+        self.config = Some(value);
         self
     }
 
@@ -106,8 +83,7 @@ impl<ID, M: Message + ?Sized> Builder<ID, M> {
     /// # Remarks
     ///
     /// Specifying a [`Client`] is useful when it has already been configured externally or it is being
-    /// reused across configurations. This configuration supersedes any configuration by [`Self::url`]
-    /// or [`Self::credentials`] as they are mutually exclusive.
+    /// reused across configurations. This configuration supersedes any previous [configuration](Self::config).
     pub fn client<V: Into<Client>>(mut self, value: V) -> Self {
         self.client = Some(value.into());
         self
@@ -147,14 +123,15 @@ impl<ID, M: Message + ?Sized> Builder<ID, M> {
         if let Some(client) = self.client.take() {
             Ok(client)
         } else {
-            use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
-            let region = RegionProviderChain::default_provider();
-            let loader = aws_config::defaults(BehaviorVersion::latest())
-                .region(region)
-                .endpoint_url(self.url.take().ok_or(MissingUrl)?)
-                .credentials_provider(self.credentials.take().ok_or(MissingCredentials)?);
+            let config = if let Some(config) = self.config.take() {
+                config
+            } else {
+                use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
+                let region = RegionProviderChain::default_provider();
+                executor::block_on(aws_config::defaults(BehaviorVersion::latest()).region(region).load())
+            };
 
-            Ok(Client::new(&executor::block_on(loader.load())))
+            Ok(Client::new(&config))
         }
     }
 }

@@ -99,7 +99,7 @@ where
                 .expression_attribute_values(kind, S(schema.kind().into()))
                 .expression_attribute_values(rev, S(schema.version().to_string()));
 
-            while let Some(schema) = schemas.next() {
+            for schema in schemas {
                 i += 1;
                 kind = format!(":kind{i}");
                 rev = format!(":rev{i}");
@@ -247,7 +247,7 @@ where
                                     if code == "ConditionalCheckFailed" {
                                         if let Some(item) = &reason.item {
                                             let existing =
-                                                from_sort_key(coerce("version", &item, Attr::as_n));
+                                                from_sort_key(coerce("version", item, Attr::as_n));
 
                                             if version.number() == existing.number() {
                                                 return Err(StoreError::Conflict(
@@ -359,7 +359,7 @@ where
                     .put(put.build().unwrap())
                     .build(),
             );
-            versions.push(version.clone());
+            versions.push(version);
             version = version.increment(Sequence);
         }
 
@@ -373,7 +373,7 @@ where
                             if code == "ConditionalCheckFailed" {
                                 if let Some(item) = &reason.item {
                                     let existing =
-                                        from_sort_key(coerce("version", &item, Attr::as_n));
+                                        from_sort_key(coerce("version", item, Attr::as_n));
 
                                     if version.number() == existing.number() {
                                         return Err(StoreError::Conflict(

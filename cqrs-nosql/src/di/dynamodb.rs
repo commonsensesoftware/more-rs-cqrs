@@ -1,5 +1,6 @@
 use crate::dynamodb::{EventStore, SnapshotStore};
-use aws_sdk_dynamodb::{config::Credentials, Client};
+use aws_config::SdkConfig;
+use aws_sdk_dynamodb::Client;
 use cfg_if::cfg_if;
 use cqrs::{
     di::AggregateBuilder,
@@ -70,7 +71,7 @@ where
 
         Self {
             services,
-            table: type_name::<A>().rsplit_once("::").unwrap().1.into(),
+            table: type_name::<A>().rsplit_once("::").unwrap().1,
             _aggregate: PhantomData,
         }
     }
@@ -91,6 +92,7 @@ where
 
         self.services.try_add(
             singleton_with_key::<A, dyn event::Store<A::ID>, EventStore<A::ID>>()
+                .depends_on(zero_or_one::<dyn Mask>())
                 .depends_on(exactly_one::<dyn Clock>())
                 .depends_on(exactly_one::<Transcoder<dyn Event>>())
                 .depends_on(zero_or_one_with_key::<A, dyn snapshot::Store<A::ID>>())
@@ -100,6 +102,10 @@ where
                         .table(table)
                         .clock(sp.get_required::<dyn Clock>())
                         .transcoder(sp.get_required::<Transcoder<dyn Event>>());
+
+                    if let Some(mask) = sp.get::<dyn Mask>() {
+                        builder = builder.mask(mask);
+                    }
 
                     if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>() {
                         if let Some(client) = options.get(Some(table)).as_ref() {
@@ -120,8 +126,7 @@ where
     A::ID: Clone + Default + FromStr + Sync + ToString,
 {
     parent: DynamoDbBuilder<'a, A>,
-    url: Option<String>,
-    credentials: Option<Credentials>,
+    config: Option<SdkConfig>,
     client: Option<Client>,
     mask: Option<Box<dyn Mask>>,
     allow_delete: bool,
@@ -136,8 +141,7 @@ where
     fn new(parent: DynamoDbBuilder<'a, A>) -> Self {
         Self {
             parent,
-            url: None,
-            credentials: None,
+            config: None,
             client: None,
             mask: None,
             allow_delete: false,
@@ -160,31 +164,17 @@ where
         self
     }
 
-    /// Configures the URL used as the database connection string.
+    /// Configures the service configuration.
     ///
     /// # Arguments
     ///
-    /// * `value` - the database connection string URL
+    /// * `value` - the service [configuration](SdkConfig)
     ///
     /// # Remarks
     ///
-    /// Configuring a URL has no effect if a [`Self::client`] is specified.
-    pub fn url<V: AsRef<str>>(mut self, value: V) -> Self {
-        self.url = Some(value.as_ref().into());
-        self
-    }
-
-    /// Configures the authentication credentials.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - the authentication [credentials](Credentials)
-    ///
-    /// # Remarks
-    ///
-    /// Configuring credentials has no effect if a [`Self::client`] is specified.
-    pub fn credentials<V: Into<Credentials>>(mut self, value: V) -> Self {
-        self.credentials = Some(value.into());
+    /// Providing a configuration has no effect if a [`Self::client`] is specified.
+    pub fn config(mut self, value: SdkConfig) -> Self {
+        self.config = Some(value);
         self
     }
 
@@ -197,8 +187,7 @@ where
     /// # Remarks
     ///
     /// Specifying a [`Client`] is useful when it has already been configured externally or it is being
-    /// reused across configurations. This configuration supersedes any configuration by [`Self::url`]
-    /// or [`Self::credentials`] as they are mutually exclusive.
+    /// reused across configurations. This configuration supersedes any previous [configuration](Self::config).
     ///
     /// A [`Client`] may be configured via [`OptionsSnapshot`] using the configured [`Self::table`],
     /// which allows specifying [`Option`] of [`Client`] for all or a specific [aggregates](Aggregate).
@@ -233,17 +222,14 @@ where
     #[inline]
     pub fn snapshots(mut self) -> Self {
         let table = self.parent.table;
-        let url;
-        let credentials;
+        let config;
         let client = self.client.clone();
         let mask = self.mask.take().map(Arc::from);
 
         if client.is_some() {
-            url = None;
-            credentials = None;
+            config = None;
         } else {
-            url = self.url.clone();
-            credentials = self.credentials.take();
+            config = self.config.clone();
         }
 
         self.use_snapshots = true;
@@ -263,12 +249,8 @@ where
                         builder = builder.mask(mask);
                     }
 
-                    if let Some(url) = &url {
-                        builder = builder.url(url);
-                    }
-
-                    if let Some(credentials) = &credentials {
-                        builder = builder.credentials(credentials.clone())
+                    if let Some(config) = &config {
+                        builder = builder.config(config.clone());
                     }
 
                     if let Some(client) = &client {
@@ -294,18 +276,15 @@ where
 {
     fn drop(&mut self) {
         let table = self.parent.table;
-        let url;
-        let credentials;
+        let config;
         let client = self.client.clone();
         let mask = self.mask.take().map(Arc::from);
         let allow_delete = self.allow_delete;
 
         if client.is_some() {
-            url = None;
-            credentials = None;
+            config = None;
         } else {
-            url = self.url.clone();
-            credentials = self.credentials.take();
+            config = self.config.clone();
         }
 
         self.parent.services.try_add(
@@ -330,12 +309,8 @@ where
                         builder = builder.mask(mask);
                     }
 
-                    if let Some(url) = &url {
-                        builder = builder.url(url);
-                    }
-
-                    if let Some(credentials) = &credentials {
-                        builder = builder.credentials(credentials.clone())
+                    if let Some(config) = config.clone() {
+                        builder = builder.config(config);
                     }
 
                     if let Some(client) = &client {
@@ -366,8 +341,7 @@ cfg_if! {
         fn resolve_client(
             client: Option<&Client>,
             table: &str,
-            url: Option<&String>,
-            credentials: Option<&Credentials>,
+            mut config: Option<SdkConfig>,
             sp: &ServiceProvider,
         ) -> Client {
             if let Some(client) = client {
@@ -377,20 +351,15 @@ cfg_if! {
                     return client.clone();
                 }
             }
+            let config = if let Some(config) = config.take() {
+                config
+            } else {
+                use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
+                let region = RegionProviderChain::default_provider();
+                executor::block_on(aws_config::defaults(BehaviorVersion::latest()).region(region).load())
+            };
 
-            use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
-            let region = RegionProviderChain::default_provider();
-            let mut loader = aws_config::defaults(BehaviorVersion::latest()).region(region);
-
-            if let Some(url) = url {
-                loader = loader.endpoint_url(url);
-            }
-
-            if let Some(credentials) = credentials {
-                loader = loader.credentials_provider(credentials.clone());
-            }
-
-            Client::new(&executor::block_on(loader.load()))
+            Client::new(&config)
         }
 
         /// Represents the configuration for Amazon DynamoDB storage migration.
@@ -420,23 +389,18 @@ cfg_if! {
             fn drop(&mut self) {
                 let table = self.parent.parent.table;
                 let client = self.parent.client.clone();
-                let url;
-                let credentials;
-
-                if client.is_some() {
-                    url = None;
-                    credentials = None;
+                let config = if client.is_some() {
+                    None
                 } else {
-                    url = self.parent.url.clone();
-                    credentials = self.parent.credentials.clone();
-                }
+                    self.parent.config.clone()
+                };
 
                 self.parent.parent.services.add(
                     transient::<dyn StoreMigration, EventStoreMigration>()
                     .depends_on(zero_or_one::<dyn OptionsSnapshot<Option<Client>>>())
                         .from(move |sp| {
-                            let client = resolve_client(client.as_ref(), table, url.as_ref(), credentials.as_ref(), sp);
-                            let migration = EventStoreMigration::new(client, table);
+                            let client = resolve_client(client.as_ref(), table, config.clone(), sp);
+                            let migration = EventStoreMigration::new(client, format!("{}_Events", table));
 
                             Ref::new(migration)
                         }),
@@ -447,23 +411,18 @@ cfg_if! {
                 }
 
                 let client = self.parent.client.clone();
-                let url;
-                let credentials;
-
-                if client.is_some() {
-                    url = None;
-                    credentials = None;
+                let config = if client.is_some() {
+                    None
                 } else {
-                    url = self.parent.url.clone();
-                    credentials = self.parent.credentials.clone();
-                }
+                    self.parent.config.clone()
+                };
 
                 self.parent.parent.services.add(
                     transient::<dyn StoreMigration, SnapshotStoreMigration>()
                     .depends_on(zero_or_one::<dyn OptionsSnapshot<Option<Client>>>())
                         .from(move |sp| {
-                            let client = resolve_client(client.as_ref(), table, url.as_ref(), credentials.as_ref(), sp);
-                            let migration = SnapshotStoreMigration::new(client, table);
+                            let client = resolve_client(client.as_ref(), table, config.clone(), sp);
+                            let migration = SnapshotStoreMigration::new(client, format!("{}_Snapshots", table));
 
                             Ref::new(migration)
                         }),
