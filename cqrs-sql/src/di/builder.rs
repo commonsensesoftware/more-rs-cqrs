@@ -5,10 +5,7 @@ use crate::{
 };
 use cfg_if::cfg_if;
 use cqrs::{
-    event::Event,
-    message::Transcoder,
-    snapshot::Snapshot,
-    Aggregate, Clock, Mask, Repository,
+    event::Event, message::Transcoder, snapshot::Snapshot, Aggregate, Clock, Mask, Repository,
 };
 use di::{
     exactly_one, exactly_one_with_key, singleton_as_self, singleton_with_key, zero_or_one,
@@ -16,7 +13,8 @@ use di::{
 };
 use options::OptionsSnapshot;
 use sqlx::{
-    pool::PoolOptions, ColumnIndex, Database, Decode, Encode, Executor, FromRow, IntoArguments, Type
+    pool::PoolOptions, ColumnIndex, Database, Decode, Encode, Executor, FromRow, IntoArguments,
+    Type,
 };
 use std::{any::type_name, marker::PhantomData, sync::Arc};
 
@@ -110,6 +108,7 @@ where
 
         self.services.try_add(
             singleton_with_key::<A, DynEventStore<A::ID>, event::SqlStore<A::ID, DB>>()
+                .depends_on(zero_or_one::<dyn Mask>())
                 .depends_on(exactly_one::<dyn Clock>())
                 .depends_on(exactly_one::<Transcoder<dyn Event>>())
                 .depends_on(zero_or_one_with_key::<A, DynSnapshotStore<A::ID>>())
@@ -120,6 +119,10 @@ where
                         .table(name)
                         .clock(sp.get_required::<dyn Clock>())
                         .transcoder(sp.get_required::<Transcoder<dyn Event>>());
+
+                    if let Some(mask) = sp.get::<dyn Mask>() {
+                        builder = builder.mask(mask);
+                    }
 
                     if let Some(snapshot) = &options {
                         let db = snapshot.get(Some(name));

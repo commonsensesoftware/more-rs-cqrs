@@ -44,5 +44,5 @@ more-cqrs-sql = { path = ".", features = [
 ] }
 rstest = { workspace = true }
 serde = { workspace = true }
-testcontainers-modules = { version = "0.11.4", features = ["postgres"] }
+testcontainers-modules = { workspace = true, features = ["postgres"] }
 tokio = { workspace = true }
