@@ -348,6 +348,10 @@ fn select_version<T: Debug + Send>(
 
 #[async_trait]
 impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for EventStore<T> {
+    fn clock(&self) -> Arc<dyn Clock> {
+        self.clock.clone()
+    }
+
     async fn ids(&self, _stored_on: Range<SystemTime>) -> IdStream<T> {
         let table = self.table.read().unwrap();
         let ids: Vec<_> = table.keys().cloned().map(Ok).collect();

@@ -229,6 +229,10 @@ where
         + Type<Sqlite>
         + 'static,
 {
+    fn clock(&self) -> Arc<dyn Clock> {
+        self.clock.clone()
+    }
+
     async fn ids(&self, stored_on: Range<SystemTime>) -> IdStream<ID> {
         let db = match self.pool.acquire().await.box_err() {
             Ok(db) => db,

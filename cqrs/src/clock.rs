@@ -1,17 +1,18 @@
 use std::{
-    sync::Arc,
+    fmt::Debug,
+    sync::{Arc, RwLock},
     time::{Duration, SystemTime},
 };
 
 /// Defines the behavior of a wall clock.
-pub trait Clock: Send + Sync {
+pub trait Clock: Debug + Send + Sync {
     /// Gets the clock's current [date and time](SystemTime).
     fn now(&self) -> SystemTime;
 }
 
 /// Represents a wall [clock](Clock).
 #[cfg_attr(feature = "di", di::injectable(Clock))]
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct WallClock;
 
 impl WallClock {
@@ -29,7 +30,7 @@ impl Clock for WallClock {
 
 /// Represents a virtual [clock](Clock).
 #[derive(Clone)]
-pub struct VirtualClock(Arc<dyn Fn() -> SystemTime + Send + Sync>);
+pub struct VirtualClock(Arc<RwLock<Arc<dyn Fn() -> SystemTime + Send + Sync>>>);
 
 impl VirtualClock {
     /// Initializes a new [`VirtualClock`].
@@ -38,8 +39,8 @@ impl VirtualClock {
     }
 
     /// Resets the clock.
-    pub fn reset(&mut self) {
-        self.0 = Arc::new(SystemTime::now);
+    pub fn reset(&self) {
+        *self.0.write().unwrap() = Arc::new(SystemTime::now);
     }
 
     /// Sets the clock to a specific date and time.
@@ -47,9 +48,10 @@ impl VirtualClock {
     /// # Arguments
     ///
     /// * `when` - the [date and time](SystemTime) to set the clock to
-    pub fn set(&mut self, when: SystemTime) {
+    pub fn set(&self, when: SystemTime) {
         let then = SystemTime::now();
-        self.0 = Arc::new(move || when + SystemTime::now().duration_since(then).unwrap());
+        *self.0.write().unwrap() =
+            Arc::new(move || when + SystemTime::now().duration_since(then).unwrap());
     }
 
     /// Winds the clock forward by the specific amount of time.
@@ -57,9 +59,10 @@ impl VirtualClock {
     /// # Arguments
     ///
     /// * `time` - the [amount of time](Duration) to wind the clock by
-    pub fn wind(&mut self, time: Duration) {
-        let then = self.0.clone();
-        self.0 = Arc::new(move || (then)() + time);
+    pub fn wind(&self, time: Duration) {
+        let mut clock = self.0.write().unwrap();
+        let then = clock.clone();
+        *clock = Arc::new(move || (then)() + time);
     }
 
     /// Rewinds the clock backward by the specific amount of time.
@@ -67,27 +70,68 @@ impl VirtualClock {
     /// # Arguments
     ///
     /// * `time` - the [amount of time](Duration) to rewind the clock by
-    pub fn rewind(&mut self, time: Duration) {
-        let then = self.0.clone();
-        self.0 = Arc::new(move || (then)() - time);
+    pub fn rewind(&self, time: Duration) {
+        let mut clock = self.0.write().unwrap();
+        let then = clock.clone();
+        *clock = Arc::new(move || (then)() - time);
     }
 }
 
 impl Default for VirtualClock {
     fn default() -> Self {
-        Self(Arc::new(SystemTime::now))
+        Self(Arc::new(RwLock::new(Arc::new(SystemTime::now))))
     }
 }
 
 impl Clock for VirtualClock {
     fn now(&self) -> SystemTime {
-        (self.0)()
+        (self.0.read().unwrap())()
+    }
+}
+
+impl Debug for VirtualClock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("VirtualClock")
+            .field(&((self.0.read().unwrap())()))
+            .finish()
     }
 }
 
 impl From<SystemTime> for VirtualClock {
     fn from(value: SystemTime) -> Self {
-        Self(Arc::new(move || value))
+        Self(Arc::new(RwLock::new(Arc::new(move || value))))
+    }
+}
+
+/// Represents a clock holder.
+#[derive(Clone, Debug)]
+pub struct ClockHolder(Arc<dyn Clock>);
+
+impl ClockHolder {
+    /// Updates the holder to hold the specific clock.
+    ///
+    /// # Arguments
+    ///
+    /// * `clock` - the new [clock](Clock) to hold
+    pub fn hold(&mut self, clock: Arc<dyn Clock>) {
+        self.0 = clock
+    }
+
+    /// Gets the held clock's current [date and time](SystemTime).
+    pub fn now(&self) -> SystemTime {
+        self.0.now()
+    }
+}
+
+impl Clock for ClockHolder {
+    fn now(&self) -> SystemTime {
+        self.now()
+    }
+}
+
+impl Default for ClockHolder {
+    fn default() -> Self {
+        Self(Arc::new(WallClock::new()))
     }
 }
 
@@ -100,7 +144,7 @@ mod test {
     fn winding_virtual_clock_should_report_expected_time() {
         // arrange
         let now = SystemTime::now();
-        let mut clock: VirtualClock = now.clone().into();
+        let clock: VirtualClock = now.clone().into();
         let five_mins = Duration::from_secs(60 * 5);
 
         // act
@@ -114,7 +158,7 @@ mod test {
     fn rewinding_virtual_clock_should_report_expected_time() {
         // arrange
         let now = SystemTime::now();
-        let mut clock: VirtualClock = now.clone().into();
+        let clock: VirtualClock = now.clone().into();
         let five_mins = Duration::from_secs(60 * 5);
 
         // act
@@ -127,14 +171,14 @@ mod test {
     #[test]
     fn resetting_virtual_clock_should_report_expected_time() {
         // arrange
-        let mut clock = VirtualClock::new();
+        let clock = VirtualClock::new();
         let five_mins = Duration::from_secs(60 * 5);
 
         clock.wind(five_mins);
 
         // act
         clock.reset();
-        
+
         let then = SystemTime::now();
         let elapsed = loop {
             if let Ok(interval) = clock.now().duration_since(then) {
@@ -150,7 +194,7 @@ mod test {
     fn winding_and_rewinding_virtual_clock_should_cancel_each_other() {
         // arrange
         let now = SystemTime::now();
-        let mut clock: VirtualClock = now.clone().into();
+        let clock: VirtualClock = now.clone().into();
         let five_mins = Duration::from_secs(60 * 5);
 
         // act
@@ -164,7 +208,7 @@ mod test {
     #[test]
     fn setting_virtual_clock_should_store_expected_epoch() {
         // arrange
-        let mut clock = VirtualClock::new();
+        let clock = VirtualClock::new();
         let yesterday = SystemTime::now() - Duration::from_secs(60 * 60 * 24);
 
         // act

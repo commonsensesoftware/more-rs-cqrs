@@ -1,8 +1,8 @@
 use super::{Event, Predicate};
-use crate::{message::EncodingError, Range, Version};
+use crate::{message::EncodingError, Clock, Range, Version};
 use async_trait::async_trait;
 use futures::Stream;
-use std::{error::Error, fmt::Debug, pin::Pin, time::SystemTime};
+use std::{error::Error, fmt::Debug, pin::Pin, sync::Arc, time::SystemTime};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -16,6 +16,9 @@ pub type EventStream<'a, T> =
 /// Defines the behavior of an event store.
 #[async_trait]
 pub trait Store<T: Debug + Send = Uuid>: Send + Sync {
+    /// Gets the store [clock](Clock).
+    fn clock(&self) -> Arc<dyn Clock>;
+
     /// Streams the unique sets of all identifiers in the store.
     ///
     /// # Arguments
@@ -51,17 +54,17 @@ pub trait Store<T: Debug + Send = Uuid>: Send + Sync {
     ) -> Result<(), StoreError<T>>;
 
     /// Deletes a collection of events.
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `id` - the identifier of the events to delete
-    /// 
+    ///
     /// # Remarks
-    /// 
+    ///
     /// In general, events should never be deleted; however, there is a use case for events that are
     /// tombstoned to be permanently deleted from a store. A valid and safe scenario might be if the
     /// events have been copied to different, cheaper, colder, but long-live store.
-    /// 
+    ///
     /// A store is not required to support deletes and the assumed expectation should be that a store
     /// does not support deletes. A store that does support deletes is expected to prevent saving new
     /// events that occur after the delete.
@@ -110,3 +113,18 @@ pub enum StoreError<T: Debug + Send> {
     #[error(transparent)]
     Unknown(#[from] Box<dyn Error + Send>),
 }
+
+impl<T: Debug + PartialEq + Send> PartialEq for StoreError<T> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Conflict(l0, l1), Self::Conflict(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::Deleted(l0), Self::Deleted(r0)) => l0 == r0,
+            (Self::InvalidEncoding(l0), Self::InvalidEncoding(r0)) => l0 == r0,
+            (Self::BatchTooLarge(l0), Self::BatchTooLarge(r0)) => l0 == r0,
+            (Self::Unknown(_), Self::Unknown(_)) => false,
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
+}
+
+impl<T: Debug + Eq + Send> Eq for StoreError<T> {}

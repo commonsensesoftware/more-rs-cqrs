@@ -1,7 +1,7 @@
-use crate::{event::Event, snapshot::Snapshot, Version};
+use crate::{event::Event, snapshot::Snapshot, Clock, Version};
 use async_trait::async_trait;
 use futures::Stream;
-use std::{error::Error, fmt::Debug};
+use std::{error::Error, fmt::Debug, sync::Arc};
 
 /// Represents a [stream](Stream) of historic [events](Event).
 pub type EventHistory<'a> =
@@ -40,6 +40,13 @@ pub trait Aggregate: Send {
     fn snapshot(&self) -> Option<Box<dyn Snapshot>> {
         None
     }
+
+    /// Sets the clock associated with the aggregate.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `clock` - the [clock](Clock) associated with the aggregate
+    fn set_clock(&mut self, clock: Arc<dyn Clock>);
 }
 
 /// Represent a set of uncommitted changes made to an [aggregate](Aggregate).

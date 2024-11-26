@@ -173,6 +173,10 @@ where
     for<'db> &'db str: Decode<'db, DB> + Type<DB>,
     for<'db> &'db [u8]: Encode<'db, DB> + Decode<'db, DB> + Type<DB>,
 {
+    fn clock(&self) -> Arc<dyn Clock> {
+        self.clock.clone()
+    }
+
     async fn ids(&self, stored_on: Range<SystemTime>) -> IdStream<ID> {
         let mut db = match self.pool.acquire().await.box_err() {
             Ok(db) => db,

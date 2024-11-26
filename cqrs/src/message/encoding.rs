@@ -45,3 +45,13 @@ pub enum EncodingError {
     #[error(transparent)]
     Failed(#[from] Box<dyn Error + Send>),
 }
+
+impl PartialEq for EncodingError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::DuplicateSchema(l0), Self::DuplicateSchema(r0)) => l0 == r0,
+            (Self::Unregistered(l0), Self::Unregistered(r0)) => l0 == r0,
+            _ => false,
+        }
+    }
+}

@@ -7,7 +7,7 @@ mod repository;
 mod version;
 
 pub use aggregate::{Aggregate, ChangeSet, EventHistory};
-pub use clock::{Clock, VirtualClock, WallClock};
+pub use clock::{Clock, ClockHolder, VirtualClock, WallClock};
 pub use mask::{Mask, SecureMask};
 pub use migration::{StoreMigration, StoreMigrator};
 pub use range::Range;

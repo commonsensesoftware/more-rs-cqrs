@@ -402,6 +402,10 @@ impl<T> Store<T> for EventStore<T>
 where
     T: Clone + Debug + Default + FromStr + Send + Sync + ToString + 'static,
 {
+    fn clock(&self) -> Arc<dyn Clock> {
+        self.clock.clone()
+    }
+    
     async fn ids(&self, stored_on: Range<SystemTime>) -> IdStream<T> {
         let request = self
             .ddb

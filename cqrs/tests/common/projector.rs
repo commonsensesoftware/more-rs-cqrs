@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use cqrs::{
     event::{Event, EventStream, IdStream, Predicate, Receiver, Store, StoreError},
     projection::{FilterBuilder, Projector},
-    projectors, Range, Version,
+    projectors, Clock, Range, Version, WallClock,
 };
 use std::{error::Error, sync::Arc, time::SystemTime};
 use std::{fmt::Debug, marker::PhantomData};
@@ -139,6 +139,10 @@ mod projectors {
 
     #[async_trait]
     impl Store<u64> for CustomStore {
+        fn clock(&self) -> Arc<dyn Clock> {
+            Arc::new(WallClock::new())
+        }
+
         async fn ids(&self, _stored_on: Range<SystemTime>) -> IdStream<u64> {
             Box::pin(futures::stream::iter(std::iter::empty()))
         }

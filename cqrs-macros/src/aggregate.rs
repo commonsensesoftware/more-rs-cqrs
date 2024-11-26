@@ -61,6 +61,11 @@ fn implement_struct(mut struct_: ItemStruct, attribute: &AggregateAttribute) -> 
                 .parse2(quote! { events: Vec<Box<dyn cqrs::event::Event>> })
                 .unwrap(),
         );
+        fields.named.push(
+            Field::parse_named
+                .parse2(quote! { clock: cqrs::ClockHolder })
+                .unwrap(),
+        );
     }
 
     quote! { #struct_ }
@@ -124,6 +129,10 @@ fn implement_trait(
 
                 fn changes(&mut self) -> cqrs::ChangeSet {
                     cqrs::ChangeSet::new(&mut self.events, &mut self.version)
+                }
+
+                fn set_clock(&mut self, clock: std::sync::Arc<dyn cqrs::Clock>) {
+                    self.clock.hold(clock)
                 }
 
                 fn replay(&mut self, event: &dyn cqrs::event::Event) {

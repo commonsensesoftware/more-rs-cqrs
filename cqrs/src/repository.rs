@@ -5,8 +5,7 @@ use crate::{
 };
 use cfg_if::cfg_if;
 use futures::{stream, StreamExt, TryStreamExt};
-use std::{error::Error, future::Future, pin::Pin};
-use std::{fmt::Debug, sync::Arc};
+use std::{error::Error, fmt::Debug, future::Future, pin::Pin, sync::Arc};
 use thiserror::Error;
 
 /// Represents the possible repository errors.
@@ -25,11 +24,11 @@ pub enum RepositoryError<T: Debug + Send> {
     InvalidEncoding(#[from] EncodingError),
 
     /// Indicates the [aggregate](Aggregate) [version](Version) is invalid.
-    /// 
+    ///
     /// # Remarks
-    /// 
+    ///
     /// An invalid version can most likely happen in one of the following scenarios:
-    /// 
+    ///
     /// * A user attempted to generate a [version](Version) explicitly
     /// * The backing store changed the [mask](crate::Mask) it uses
     /// * The backing store itself has changed
@@ -58,6 +57,20 @@ impl<T: Debug + Send + 'static> From<StoreError<T>> for RepositoryError<T> {
         }
     }
 }
+
+impl<T: Debug + PartialEq + Send> PartialEq for RepositoryError<T> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::NotFound(l0), Self::NotFound(r0)) => l0 == r0,
+            (Self::Conflict(l0, l1), Self::Conflict(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::InvalidEncoding(l0), Self::InvalidEncoding(r0)) => l0 == r0,
+            (Self::Unknown(_), Self::Unknown(_)) => false,
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
+}
+
+impl<T: Debug + Eq + Send> Eq for RepositoryError<T> {}
 
 /// Represents an [aggregate](Aggregate) repository.
 pub struct Repository<A: Aggregate> {
@@ -115,6 +128,7 @@ where
                 );
                 let mut aggregate = A::default();
 
+                aggregate.set_clock(self.store.clock());
                 aggregate.replay_all(&mut history).await?;
                 Ok(aggregate)
             } else {
@@ -152,13 +166,13 @@ where
     /// # Arguments
     ///
     /// * `id` - the aggregate identifier
-    /// 
+    ///
     /// # Remarks
-    /// 
+    ///
     /// In general, an aggregate should never be deleted; however, there is a use case for an aggregate
     /// that is tombstoned to be permanently deleted. A valid and safe scenario might be if the underlying
     /// events have been copied to different, cheaper, colder, but long-live [store](Store).
-    /// 
+    ///
     /// A [store](Store) is not required to support deletes and the assumed expectation should be that a
     /// [store](Store) does not support deletes. If a [store](Store) returns [`StoreError::Unsupported`],
     /// it will bubble up as [`RepositoryError::Unsupported`].
