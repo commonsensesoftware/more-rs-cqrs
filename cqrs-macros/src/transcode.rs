@@ -95,7 +95,11 @@ pub(crate) fn expand(attribute: TranscodeAttribute, input: TokenStream) -> Token
                 .map(|struct_| &struct_.ident);
             let name = attribute.name;
             let with = attribute.with;
-            let encoding = if with.is_ident("ProtoBuf") {
+            let encoding = if with.is_ident("ProtoBuf")
+                || with.is_ident("Json")
+                || with.is_ident("MessagePack")
+                || with.is_ident("Cbor")
+            {
                 quote! { cqrs::encoding::#with }
             } else {
                 with.to_token_stream()

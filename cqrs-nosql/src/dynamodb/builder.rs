@@ -14,7 +14,7 @@ use thiserror::Error;
 type DynSnapshotStore<ID> = dyn cqrs::snapshot::Store<ID>;
 
 /// Represents the possible Amazon DynamoDB store builder errors.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum BuilderError {
     /// Indicates the target table is missing because it has not been configured.
     #[error("a table has not been configured")]

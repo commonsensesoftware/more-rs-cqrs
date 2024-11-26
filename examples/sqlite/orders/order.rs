@@ -17,7 +17,7 @@ impl Default for State {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Copy, Clone, PartialEq, Eq)]
 pub enum OrderError {
     #[error("insufficient funds")]
     InsufficientFunds,

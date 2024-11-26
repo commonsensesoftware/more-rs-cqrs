@@ -24,7 +24,7 @@ mod events {
         pub fn new<S: Into<String>>(id: S, version: Version, amount: f32) -> Self {
             Self {
                 id: id.into(),
-                version: version.into(),
+                version: Some(version),
                 amount,
             }
         }
@@ -44,7 +44,7 @@ mod events {
         pub fn new<S: Into<String>>(id: S, version: Version, amount: f32) -> Self {
             Self {
                 id: id.into(),
-                version: version.into(),
+                version: Some(version),
                 amount,
             }
         }
@@ -102,11 +102,11 @@ impl Account {
     }
 
     pub fn credit(&mut self, amount: f32) {
-        self.record(Credited::new(&self.id, self.version.into(), amount));
+        self.record(Credited::new(&self.id, self.version, amount));
     }
 
     pub fn debit(&mut self, amount: f32) {
-        self.record(Debited::new(&self.id, self.version.into(), amount));
+        self.record(Debited::new(&self.id, self.version, amount));
     }
 
     #[when]
