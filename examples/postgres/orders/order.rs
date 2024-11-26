@@ -191,13 +191,13 @@ impl Order {
     }
 
     #[when]
-    fn _drafted(&mut self, event: &Drafted) {
+    fn drafted(&mut self, event: &Drafted) {
         self.id = event.id().into();
         self.state = State::Drafted;
     }
 
     #[when]
-    fn _item_add(&mut self, event: &ItemAdded) {
+    fn item_add(&mut self, event: &ItemAdded) {
         if let Some(item) = self.items.iter_mut().find(|i| i.sku == event.item().sku) {
             item.quantity = item.quantity.saturating_add(event.item().quantity);
         } else {
@@ -206,14 +206,14 @@ impl Order {
     }
 
     #[when]
-    fn _item_removed(&mut self, event: &ItemRemoved) {
+    fn item_removed(&mut self, event: &ItemRemoved) {
         if let Some(item) = self.items.iter_mut().find(|i| i.sku == event.item().sku) {
             item.quantity = item.quantity.saturating_sub(event.item().quantity);
         }
     }
 
     #[when]
-    fn _address_updated(&mut self, event: &AddressUpdated) {
+    fn address_updated(&mut self, event: &AddressUpdated) {
         self.address = Some(Address {
             street: event.street().into(),
             region: event.region().into(),
@@ -222,7 +222,7 @@ impl Order {
     }
 
     #[when]
-    fn _paid(&mut self, event: &Paid) {
+    fn paid(&mut self, event: &Paid) {
         self.payment = Some(Payment {
             date: event.date(),
             amount: event.amount(),
@@ -232,13 +232,13 @@ impl Order {
     }
 
     #[when]
-    fn _canceled(&mut self, event: &Canceled) {
+    fn canceled(&mut self, event: &Canceled) {
         self.canceled_on = Some(event.date());
         self.state = State::Canceled;
     }
 
     #[when]
-    fn _fulfilled(&mut self, event: &Fulfilled) {
+    fn fulfilled(&mut self, event: &Fulfilled) {
         self.fulfilled_on = Some(event.date());
         self.state = State::Fulfilled;
     }
