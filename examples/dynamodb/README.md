@@ -17,7 +17,7 @@ This example illustrates using:
 Run it with:
 
 ```bash
-cargo run --example dynamodb-orders
+cargo run --package dynamodb-examples --example dynamodb-orders
 ```
 
 >**Note**: In order to run this example, the Docker engine must be running.

@@ -16,5 +16,5 @@ This example shows the simplest possible thing using:
 Run it with:
 
 ```bash
-cargo run --example simplest-possible-thing
+cargo run --package basic-examples --example simplest-possible-thing
 ```

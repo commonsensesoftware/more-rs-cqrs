@@ -46,6 +46,7 @@ fn encode(version: u32, sequence: u8) -> u64 {
 }
 
 #[inline]
+#[allow(dead_code)]
 pub(crate) fn from_sort_key(version: u32) -> Version {
     let decoded = Version::new(version as u64);
     new_version(decoded.number(), decoded.sequence())

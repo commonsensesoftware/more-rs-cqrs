@@ -1,7 +1,7 @@
 [package]
 name = "more-cqrs"
 readme = "README.md"
-description = "Command Query Responsibilty Seggreation (CQRS) in Rust"
+description = "Command Query Responsibility Segregation (CQRS) in Rust"
 keywords = ["cqrs", "messaging"]
 version.workspace = true
 authors.workspace = true
@@ -39,5 +39,6 @@ thiserror = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
-more-cqrs = { path = ".", features = ["di", "mem", "protobuf"] }
+more-cqrs = { path = ".", features = ["di", "mem", "json"] }
+serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["full"] }

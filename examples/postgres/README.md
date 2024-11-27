@@ -17,7 +17,7 @@ This example illustrates using:
 Run it with:
 
 ```bash
-cargo run --example postgres-orders
+cargo run --package postgres-examples --example postgres-orders
 ```
 
 >**Note**: In order to run this example, the Docker engine must be running.

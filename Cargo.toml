@@ -1,9 +1,6 @@
 [workspace]
-members = [
-	"cqrs",
-	"cqrs-*",
-	"examples/*",
-]
+members = ["cqrs", "cqrs-*", "examples/*"]
+default-members = ["cqrs", "cqrs-*"]
 resolver = "2"
 
 [workspace.package]

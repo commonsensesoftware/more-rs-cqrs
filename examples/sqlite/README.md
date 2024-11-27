@@ -17,5 +17,5 @@ This example illustrates using:
 Run it with:
 
 ```bash
-cargo run --example sqlite-orders
+cargo run --package sqlite-examples --example sqlite-orders
 ```
