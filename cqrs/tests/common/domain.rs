@@ -1,6 +1,6 @@
 use cqrs::{aggregate, event, snapshot, transcode, when, Aggregate, Version};
-use prost::Message;
 use std::time::{Duration, SystemTime};
+use serde::{Deserialize, Serialize};
 
 // since this is a test crate, the test configuration needs to be
 // specified in order to expand macros
@@ -8,15 +8,12 @@ use std::time::{Duration, SystemTime};
 // RUSTFLAGS='--cfg test' cargo expand
 // $env:RUSTFLAGS='--cfg test' ; cargo expand
 
-#[transcode(with = cqrs::encoding::ProtoBuf)]
+#[transcode(with = Json)]
 mod events {
     #[event]
-    #[derive(Message, PartialEq)]
+    #[derive(Default, Debug, Deserialize, Serialize, PartialEq)]
     pub struct Debited {
-        #[prost(string)]
         pub id: String,
-
-        #[prost(float)]
         pub amount: f32,
     }
 
@@ -24,19 +21,16 @@ mod events {
         pub fn new<S: Into<String>>(id: S, version: Version, amount: f32) -> Self {
             Self {
                 id: id.into(),
-                version: Some(version),
+                version,
                 amount,
             }
         }
     }
 
     #[event]
-    #[derive(Message, PartialEq)]
+    #[derive(Default, Debug, Deserialize, Serialize, PartialEq)]
     pub struct Credited {
-        #[prost(string)]
         pub id: String,
-
-        #[prost(float)]
         pub amount: f32,
     }
 
@@ -44,22 +38,17 @@ mod events {
         pub fn new<S: Into<String>>(id: S, version: Version, amount: f32) -> Self {
             Self {
                 id: id.into(),
-                version: Some(version),
+                version,
                 amount,
             }
         }
     }
 
     #[snapshot]
-    #[derive(Message, PartialEq)]
+    #[derive(Default, Debug, Deserialize, Serialize, PartialEq)]
     pub struct Statement {
-        #[prost(string)]
         pub id: String,
-
-        #[prost(float)]
         pub balance: f32,
-
-        #[prost(uint64)]
         pub date: u64,
     }
 
@@ -67,7 +56,7 @@ mod events {
         fn new<S: Into<String>>(id: S, version: Version, balance: f32) -> Self {
             Self {
                 id: id.into(),
-                version: Some(version),
+                version,
                 balance,
                 date: SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
@@ -110,19 +99,19 @@ impl Account {
     }
 
     #[when]
-    fn apply_debit(&mut self, event: &Debited) {
+    fn debited(&mut self, event: &Debited) {
         self.id = event.id.clone();
         self.balance -= event.amount;
     }
 
     #[when]
-    fn apply_credit(&mut self, event: &Credited) {
+    fn credited(&mut self, event: &Credited) {
         self.id = event.id.clone();
         self.balance += event.amount;
     }
 
     #[when]
-    fn apply_snapshot(&mut self, snapshot: &Statement) {
+    fn statement_received(&mut self, snapshot: &Statement) {
         self.id = snapshot.id.clone();
         self.balance = snapshot.balance();
     }
