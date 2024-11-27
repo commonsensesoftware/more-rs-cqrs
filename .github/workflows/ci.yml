@@ -46,7 +46,7 @@ jobs:
 
       - name: Cargo Test
         run: |
-          cargo test --package more-cqrs --all-features -- -Z unstable-options --format json --report-time | cargo2junit > target/debug/more-cqrs.xml
+          cargo test --package more-cqrs --features di,mem,cbor,json,message-pack -- -Z unstable-options --format json --report-time | cargo2junit > target/debug/more-cqrs.xml
           cargo test --package more-cqrs-sql -- -Z unstable-options --format json --report-time | cargo2junit > target/debug/more-cqrs-sql.xml
           cargo test --package more-cqrs-nosql -- -Z unstable-options --format json --report-time | cargo2junit > target/debug/more-cqrs-nosql.xml
 
