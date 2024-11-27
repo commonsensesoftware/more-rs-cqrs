@@ -236,80 +236,66 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Snapshot, DB> {
     }
 }
 
-/// Defines the build behavior for a [`SqlStoreBuilder`].
-///
-/// # Remarks
-///
-/// This trait can be used to build a store which is unable to be built into a standard
-/// [event store](event::SqlStore) or [snapshot store](snapshot::SqlStore), but uses all
-/// of the other common builder functions; for example, SQLite.
-pub trait SqlStoreBuild: Sized {
-    type Store;
-
-    /// Builds and returns a new store.
-    fn build(self) -> Result<Self::Store, SqlStoreBuilderError>;
-}
-
 cfg_if! {
     if #[cfg(feature = "sqlite")] {
         use crate::sqlite::{EventStore, SnapshotStore};
         use sqlx::Sqlite;
 
-        impl<ID> SqlStoreBuild for SqlStoreBuilder<ID, dyn Event, Sqlite> {
-            type Store = EventStore<ID>;
+        impl<ID> TryFrom<SqlStoreBuilder<ID, dyn Event, Sqlite>> for EventStore<ID> {
+            type Error = SqlStoreBuilderError;
 
-            fn build(self) -> Result<Self::Store, SqlStoreBuilderError> {
-                let pool = if let Some(pool) = &self.pool {
+            fn try_from(value: SqlStoreBuilder<ID, dyn Event, Sqlite>) -> Result<Self, Self::Error> {
+                let pool = if let Some(pool) = &value.pool {
                     pool.clone()
                 } else {
-                    let url = self.url.ok_or(MissingUrl)?;
-                    let options = self.options.unwrap_or_default();
+                    let url = value.url.ok_or(MissingUrl)?;
+                    let options = value.options.unwrap_or_default();
                     options.connect_lazy(&url)?
                 };
-                let table = self.table.ok_or(MissingTable)?;
-                let table = if self.schema.is_empty() {
+                let table = value.table.ok_or(MissingTable)?;
+                let table = if value.schema.is_empty() {
                     table.into()
                 } else {
-                    format!("{}_{}", self.schema, table)
+                    format!("{}_{}", value.schema, table)
                 };
 
-                Ok(Self::Store::new(
+                Ok(Self::new(
                     table,
                     pool,
-                    self.mask,
-                    self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
-                    self.transcoder.unwrap_or_default(),
-                    self.snapshots,
-                    self.delete,
+                    value.mask,
+                    value.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
+                    value.transcoder.unwrap_or_default(),
+                    value.snapshots,
+                    value.delete,
                 ))
             }
         }
 
 
-        impl<ID> SqlStoreBuild for SqlStoreBuilder<ID, dyn Snapshot, Sqlite> {
-            type Store = SnapshotStore<ID>;
+        impl<ID> TryFrom<SqlStoreBuilder<ID, dyn Snapshot, Sqlite>> for SnapshotStore<ID> {
+            type Error = SqlStoreBuilderError;
 
-            fn build(self) -> Result<Self::Store, SqlStoreBuilderError> {
-                let pool = if let Some(pool) = &self.pool {
+            fn try_from(value: SqlStoreBuilder<ID, dyn Snapshot, Sqlite>) -> Result<Self, Self::Error> {
+                let pool = if let Some(pool) = &value.pool {
                     pool.clone()
                 } else {
-                    let url = self.url.ok_or(MissingUrl)?;
-                    let options = self.options.unwrap_or_default();
+                    let url = value.url.ok_or(MissingUrl)?;
+                    let options = value.options.unwrap_or_default();
                     options.connect_lazy(&url)?
                 };
-                let table = self.table.ok_or(MissingTable)?;
-                let table = if self.schema.is_empty() {
+                let table = value.table.ok_or(MissingTable)?;
+                let table = if value.schema.is_empty() {
                     table.into()
                 } else {
-                    format!("{}_{}", self.schema, table)
+                    format!("{}_{}", value.schema, table)
                 };
 
-                Ok(Self::Store::new(
+                Ok(Self::new(
                     table,
                     pool,
-                    self.mask,
-                    self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
-                    self.transcoder.unwrap_or_default(),
+                    value.mask,
+                    value.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
+                    value.transcoder.unwrap_or_default(),
                 ))
             }
         }

@@ -1,8 +1,5 @@
 use super::{merge, DynEventStore, DynSnapshotStore, SqlOptions};
-use crate::{
-    sqlite::{EventStore, SnapshotStore},
-    SqlStoreBuild,
-};
+use crate::sqlite::{EventStore, SnapshotStore};
 use cfg_if::cfg_if;
 use cqrs::{
     di::AggregateBuilder, event::Event, message::Transcoder, snapshot::Snapshot, Aggregate, Clock,
@@ -117,7 +114,7 @@ where
                         builder = builder.options(db.options.clone());
                     }
 
-                    Ref::new(SqlStoreBuild::build(builder).unwrap())
+                    Ref::new( EventStore::try_from(builder).unwrap())
                 }),
         );
     }
@@ -255,7 +252,7 @@ where
                             builder = builder.mask(mask);
                         }
 
-                        Ref::new(SqlStoreBuild::build(builder).unwrap())
+                        Ref::new(SnapshotStore::try_from(builder).unwrap())
                     }),
             )
             .try_add(singleton_with_key_factory::<A, DynSnapshotStore<A::ID>, _>(
@@ -318,7 +315,7 @@ where
                             builder = builder.with_deletes();
                         }
 
-                        Ref::new(SqlStoreBuild::build(builder).unwrap())
+                        Ref::new(EventStore::try_from(builder).unwrap())
                     }),
             )
             .try_add(singleton_with_key_factory::<A, DynEventStore<A::ID>, _>(

@@ -7,7 +7,7 @@ use common::{
 use cqrs::{snapshot::Store, Repository, RepositoryError};
 use cqrs_sql::{
     sqlite::{EventStore, Migrator, SnapshotStore},
-    SqlStoreBuild, SqlStoreMigration,
+    SqlStoreMigration,
 };
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
@@ -16,26 +16,26 @@ use std::sync::Arc;
 async fn verify_sqlite_integration() -> TestResult {
     // arrange
     let sqlite = SqlitePoolOptions::new().connect("sqlite::memory:").await?;
-    let snapshots = Arc::new(SqlStoreBuild::build(
-        SnapshotStore::<String>::builder()
+    let snapshots: Arc<SnapshotStore<String>> = Arc::new(
+        SnapshotStore::builder()
             .pool(sqlite.clone())
             .table("TMP_4f244bbd22a54314bc04c048591a1bef")
-            .transcoder(domain::transcoder::snapshots()),
-    )?);
-    let events = SqlStoreBuild::build(
-        EventStore::<String>::builder()
-            .pool(sqlite.clone())
-            .table("TMP_e4caf6cc5467403f9b23e6eec7c344eb")
-            .transcoder(domain::transcoder::events())
-            .with_deletes()
-            .snapshots(snapshots.clone() as Arc<dyn cqrs::snapshot::Store<String>>),
-    )?;
+            .transcoder(domain::transcoder::snapshots())
+            .try_into()?,
+    );
+    let events: EventStore<String> = EventStore::builder()
+        .pool(sqlite.clone())
+        .table("TMP_e4caf6cc5467403f9b23e6eec7c344eb")
+        .transcoder(domain::transcoder::events())
+        .with_deletes()
+        .snapshots(snapshots.clone() as Arc<dyn cqrs::snapshot::Store<String>>)
+        .try_into()?;
     let migrator = Migrator::new();
 
     migrator.add(SqlStoreMigration::with_pool(&events, sqlite.clone()));
     migrator.add(SqlStoreMigration::with_pool(&*snapshots, sqlite));
     migrator.run().await?;
-    
+
     let repository = Repository::<Account>::new(events);
 
     // act / assert
@@ -69,13 +69,12 @@ async fn verify_sqlite_integration() -> TestResult {
 async fn verify_sqlite_does_not_allow_save_after_delete() -> TestResult {
     // arrange
     let sqlite = SqlitePoolOptions::new().connect("sqlite::memory:").await?;
-    let events = SqlStoreBuild::build(
-        EventStore::<String>::builder()
-            .pool(sqlite.clone())
-            .table("TMP_b2d85560f008418b9174cc8b0b36b6a4")
-            .transcoder(domain::transcoder::events())
-            .with_deletes(),
-    )?;
+    let events: EventStore<String> = EventStore::builder()
+        .pool(sqlite.clone())
+        .table("TMP_b2d85560f008418b9174cc8b0b36b6a4")
+        .transcoder(domain::transcoder::events())
+        .with_deletes()
+        .try_into()?;
     let migrator = Migrator::new();
 
     migrator.add(SqlStoreMigration::with_pool(&events, sqlite.clone()));
