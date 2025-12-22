@@ -125,10 +125,10 @@ where
         mut version: Version,
         snapshot: Box<dyn Snapshot>,
     ) -> Result<(), SnapshotError> {
-        if version != Default::default() {
-            if let Some(mask) = &self.mask {
-                version = version.unmask(mask);
-            }
+        if version != Default::default()
+            && let Some(mask) = &self.mask
+        {
+            version = version.unmask(mask);
         }
 
         if version.invalid() {

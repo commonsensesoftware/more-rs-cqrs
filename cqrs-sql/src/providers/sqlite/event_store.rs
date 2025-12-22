@@ -171,10 +171,10 @@ where
             return Ok(None);
         }
 
-        if expected_version != Version::default() {
-            if let Some(mask) = self.mask.clone() {
-                expected_version = expected_version.unmask(&mask);
-            }
+        if expected_version != Version::default()
+            && let Some(mask) = &self.mask
+        {
+            expected_version = expected_version.unmask(mask);
         }
 
         if expected_version.invalid() {
@@ -201,15 +201,16 @@ where
             let mut tx = db.begin().await.box_err()?;
             let second = second?;
 
-            if self.delete.supported() {
-                if let Some(previous) = first.previous() {
-                    cmd::ensure_not_deleted(&table, &previous, &mut tx).await?;
-                }
+            if self.delete.supported()
+                && let Some(previous) = first.previous()
+            {
+                cmd::ensure_not_deleted(&table, &previous, &mut tx).await?;
             }
 
             cmd::insert_transacted(&table, &first, &mut tx).await?;
             cmd::insert_transacted(&table, &second, &mut tx).await?;
 
+            #[allow(clippy::while_let_on_iterator)] // false positive; rows.version() used below
             while let Some(row) = rows.next() {
                 let row = row?;
                 cmd::insert_transacted(&table, &row, &mut tx).await?;
@@ -219,25 +220,25 @@ where
         } else {
             let mut execute = true;
 
-            if self.delete.supported() {
-                if let Some(previous) = first.previous() {
-                    let mut tx = db.begin().await.box_err()?;
+            if self.delete.supported()
+                && let Some(previous) = first.previous()
+            {
+                let mut tx = db.begin().await.box_err()?;
 
-                    cmd::ensure_not_deleted(&table, &previous, &mut tx).await?;
-                    cmd::insert_transacted(&table, &first, &mut tx).await?;
-                    tx.commit().await.box_err()?;
-                    execute = false;
-                }
+                cmd::ensure_not_deleted(&table, &previous, &mut tx).await?;
+                cmd::insert_transacted(&table, &first, &mut tx).await?;
+                tx.commit().await.box_err()?;
+                execute = false;
             }
 
             if execute {
                 let mut insert = command::insert(&table, &first);
 
                 if let Err(error) = insert.build().execute(&mut *db).await {
-                    if let sqlx::Error::Database(error) = &error {
-                        if error.is_unique_violation() {
-                            return Err(StoreError::Conflict(id.clone(), first.version as u32));
-                        }
+                    if let sqlx::Error::Database(error) = &error
+                        && error.is_unique_violation()
+                    {
+                        return Err(StoreError::Conflict(id.clone(), first.version as u32));
                     }
                     return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
                 }

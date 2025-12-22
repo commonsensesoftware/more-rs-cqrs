@@ -14,15 +14,16 @@ where
     let mut insert = event::command::insert::<ID, Sqlite>(table, row);
 
     if let Err(error) = insert.build().execute(&mut **tx).await {
-        if let sqlx::Error::Database(error) = &error {
-            if error.is_unique_violation() {
-                return Err(StoreError::Conflict(row.id.clone(), row.version as u32));
-            }
+        if let sqlx::Error::Database(error) = &error
+            && error.is_unique_violation()
+        {
+            Err(StoreError::Conflict(row.id.clone(), row.version as u32))
+        } else {
+            Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>))
         }
-        return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
+    } else {
+        Ok(())
     }
-
-    Ok(())
 }
 
 pub async fn ensure_not_deleted<'a, ID>(
