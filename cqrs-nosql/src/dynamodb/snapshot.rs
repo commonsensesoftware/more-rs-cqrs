@@ -1,15 +1,15 @@
-use super::{coerce, delete_all, greater_than, less_than, Builder};
-use crate::{version::new_version, BoxErr, NoSqlVersion};
+use super::{Builder, coerce, delete_all, greater_than, less_than};
+use crate::{BoxErr, NoSqlVersion, version::new_version};
 use async_trait::async_trait;
 use aws_sdk_dynamodb::{
+    Client,
     primitives::Blob,
     types::AttributeValue::{self, B, N, S},
-    Client,
 };
 use cqrs::{
-    message::{Descriptor, Schema, Transcoder},
+    Clock, Mask, Version,
+    message::{Descriptor, Saved, Schema, Transcoder},
     snapshot::{Predicate, Retention, Snapshot, SnapshotError, Store},
-    Clock, Mask,
 };
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
@@ -65,14 +65,13 @@ where
         &self,
         id: &T,
         predicate: Option<&Predicate>,
-    ) -> Result<Option<Box<dyn Snapshot>>, SnapshotError> {
+    ) -> Result<Option<Saved<Box<dyn Snapshot>>>, SnapshotError> {
         if let Some(descriptor) = self.load_raw(id, predicate).await? {
-            let mut snapshot = self
-                .transcoder
-                .decode(&descriptor.schema, &descriptor.content)?;
-
-            snapshot.set_version(descriptor.version);
-            Ok(Some(snapshot))
+            Ok(Some(Saved::versioned(
+                self.transcoder
+                    .decode(&descriptor.schema, &descriptor.content)?,
+                descriptor.version,
+            )))
         } else {
             Ok(None)
         }
@@ -150,13 +149,16 @@ where
         }
     }
 
-    async fn save(&self, id: &T, snapshot: Box<dyn Snapshot>) -> Result<(), SnapshotError> {
-        let mut version = snapshot.version();
-
-        if version != Default::default() {
-            if let Some(mask) = self.mask.clone() {
-                version = version.unmask(&mask);
-            }
+    async fn save(
+        &self,
+        id: &T,
+        mut version: Version,
+        snapshot: Box<dyn Snapshot>,
+    ) -> Result<(), SnapshotError> {
+        if version != Default::default()
+            && let Some(mask) = &self.mask
+        {
+            version = version.unmask(mask);
         }
 
         if version.invalid() {

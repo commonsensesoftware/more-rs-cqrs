@@ -21,7 +21,7 @@ use aws_sdk_dynamodb::{
 use cqrs::{
     Clock, Mask, Range, Version,
     event::{Delete, Event, EventStream, IdStream, Predicate, PredicateBuilder, Store, StoreError},
-    message::{Schema, Transcoder},
+    message::{Saved, Schema, Transcoder},
     snapshot,
 };
 use std::{error::Error, fmt::Debug, str::FromStr, sync::Arc, time::SystemTime};
@@ -182,89 +182,84 @@ impl<T> EventStore<T>
 where
     T: Clone + Debug + Send + Sync + ToString + 'static,
 {
+    #[allow(clippy::borrowed_box)]
     async fn write_one(
         &self,
         id: &T,
         version: Version,
         event: &Box<dyn Event>,
-    ) -> Result<(), StoreError<T>> {
+    ) -> Result<Version, StoreError<T>> {
         let stored_on = crate::to_secs(self.clock.now());
         let schema = event.schema();
         let content = self.transcoder.encode(event.as_ref())?;
 
-        if self.delete.supported() {
-            if let Some(previous) = version.previous() {
-                let mut request = self.ddb.transact_write_items();
+        if self.delete.supported()
+            && let Some(previous) = version.previous()
+        {
+            let mut request = self.ddb.transact_write_items();
 
-                // the following update doesn't change anything, but it ensures the previous
-                // version still exists and hasn't been deleted
-                let update = Update::builder()
-                    .table_name(&self.table)
-                    .key("id", S(id.to_string()))
-                    .key("version", N(previous.sort_key().to_string()))
-                    .update_expression("SET version = :version")
-                    .condition_expression("attribute_exists(id) AND attribute_exists(version)")
-                    .expression_attribute_values(":version", N(previous.sort_key().to_string()));
+            // the following update doesn't change anything, but it ensures the previous
+            // version still exists and hasn't been deleted
+            let update = Update::builder()
+                .table_name(&self.table)
+                .key("id", S(id.to_string()))
+                .key("version", N(previous.sort_key().to_string()))
+                .update_expression("SET version = :version")
+                .condition_expression("attribute_exists(id) AND attribute_exists(version)")
+                .expression_attribute_values(":version", N(previous.sort_key().to_string()));
 
-                request = request.transact_items(
-                    TransactWriteItem::builder()
-                        .update(update.build().unwrap())
-                        .build(),
-                );
+            request = request.transact_items(
+                TransactWriteItem::builder()
+                    .update(update.build().unwrap())
+                    .build(),
+            );
 
-                let mut put = Put::builder()
-                    .table_name(&self.table)
-                    .item("id", S(id.to_string()))
-                    .item("version", N(version.sort_key().to_string()))
-                    .item("storedOn", N(stored_on.to_string()))
-                    .item("kind", S(schema.kind().into()))
-                    .item("revision", N(schema.version().to_string()))
-                    .item("content", B(Blob::new(content)))
-                    .condition_expression(
-                        "attribute_not_exists(id) AND attribute_not_exists(version)",
-                    );
+            let mut put = Put::builder()
+                .table_name(&self.table)
+                .item("id", S(id.to_string()))
+                .item("version", N(version.sort_key().to_string()))
+                .item("storedOn", N(stored_on.to_string()))
+                .item("kind", S(schema.kind().into()))
+                .item("revision", N(schema.version().to_string()))
+                .item("content", B(Blob::new(content)))
+                .condition_expression("attribute_not_exists(id) AND attribute_not_exists(version)");
 
-                if let Some(cid) = event.correlation_id() {
-                    put = put.item("correlationId", S(cid.into()));
-                }
+            if let Some(cid) = event.correlation_id() {
+                put = put.item("correlationId", S(cid.into()));
+            }
 
-                request = request.transact_items(
-                    TransactWriteItem::builder()
-                        .put(put.build().unwrap())
-                        .build(),
-                );
+            request = request.transact_items(
+                TransactWriteItem::builder()
+                    .put(put.build().unwrap())
+                    .build(),
+            );
 
-                if let Err(failure) = request.send().await {
-                    let error = failure.into_service_error();
+            if let Err(failure) = request.send().await {
+                let error = failure.into_service_error();
 
-                    if let TransactionCanceledException(canceled) = &error {
-                        if let Some(reasons) = &canceled.cancellation_reasons {
-                            for reason in reasons {
-                                if let Some(code) = &reason.code {
-                                    if code == "ConditionalCheckFailed" {
-                                        if let Some(item) = &reason.item {
-                                            let existing =
-                                                from_sort_key(coerce("version", item, Attr::as_n));
+                if let TransactionCanceledException(canceled) = &error
+                    && let Some(reasons) = &canceled.cancellation_reasons
+                {
+                    for reason in reasons {
+                        if let Some(code) = &reason.code
+                            && code == "ConditionalCheckFailed"
+                        {
+                            if let Some(item) = &reason.item {
+                                let existing = from_sort_key(coerce("version", item, Attr::as_n));
 
-                                            if version.number() == existing.number() {
-                                                return Err(StoreError::Conflict(
-                                                    id.clone(),
-                                                    version.number(),
-                                                ));
-                                            }
-                                        }
-
-                                        return Err(StoreError::Deleted(id.clone()));
-                                    }
+                                if version.number() == existing.number() {
+                                    return Err(StoreError::Conflict(id.clone(), version.number()));
                                 }
                             }
+
+                            return Err(StoreError::Deleted(id.clone()));
                         }
                     }
-
-                    return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
-                } else {
-                    return Ok(());
                 }
+
+                return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
+            } else {
+                return Ok(version);
             }
         }
 
@@ -295,7 +290,7 @@ where
                 Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>))
             }
         } else {
-            Ok(())
+            Ok(version)
         }
     }
 
@@ -304,29 +299,31 @@ where
         id: &T,
         mut version: Version,
         events: &[Box<dyn Event>],
-    ) -> Result<(), StoreError<T>> {
+    ) -> Result<Version, StoreError<T>> {
         let stored_on = crate::to_secs(self.clock.now());
         let mut request = self.ddb.transact_write_items();
 
-        if self.delete.supported() {
-            if let Some(previous) = version.previous() {
-                // the following update doesn't change anything, but it ensures the previous
-                // version still exists and hasn't been deleted
-                let update = Update::builder()
-                    .table_name(&self.table)
-                    .key("id", S(id.to_string()))
-                    .key("version", N(previous.sort_key().to_string()))
-                    .update_expression("SET version = :version")
-                    .condition_expression("attribute_exists(id) AND attribute_exists(version)")
-                    .expression_attribute_values(":version", N(previous.sort_key().to_string()));
+        if self.delete.supported()
+            && let Some(previous) = version.previous()
+        {
+            // the following update doesn't change anything, but it ensures the previous
+            // version still exists and hasn't been deleted
+            let update = Update::builder()
+                .table_name(&self.table)
+                .key("id", S(id.to_string()))
+                .key("version", N(previous.sort_key().to_string()))
+                .update_expression("SET version = :version")
+                .condition_expression("attribute_exists(id) AND attribute_exists(version)")
+                .expression_attribute_values(":version", N(previous.sort_key().to_string()));
 
-                request = request.transact_items(
-                    TransactWriteItem::builder()
-                        .update(update.build().unwrap())
-                        .build(),
-                );
-            }
+            request = request.transact_items(
+                TransactWriteItem::builder()
+                    .update(update.build().unwrap())
+                    .build(),
+            );
         }
+
+        let mut current_version = version;
 
         for event in events {
             let schema = event.schema();
@@ -350,40 +347,38 @@ where
                     .put(put.build().unwrap())
                     .build(),
             );
-            versions.push(version);
-            version = version.increment(Sequence);
+            current_version = version;
+            version = current_version.increment(Sequence);
         }
+
+        version = current_version;
 
         if let Err(failure) = request.send().await {
             let error = failure.into_service_error();
 
-            if let TransactionCanceledException(canceled) = &error {
-                if let Some(reasons) = &canceled.cancellation_reasons {
-                    for reason in reasons {
-                        if let Some(code) = &reason.code {
-                            if code == "ConditionalCheckFailed" {
-                                if let Some(item) = &reason.item {
-                                    let existing =
-                                        from_sort_key(coerce("version", item, Attr::as_n));
+            if let TransactionCanceledException(canceled) = &error
+                && let Some(reasons) = &canceled.cancellation_reasons
+            {
+                for reason in reasons {
+                    if let Some(code) = &reason.code
+                        && code == "ConditionalCheckFailed"
+                    {
+                        if let Some(item) = &reason.item {
+                            let existing = from_sort_key(coerce("version", item, Attr::as_n));
 
-                                    if version.number() == existing.number() {
-                                        return Err(StoreError::Conflict(
-                                            id.clone(),
-                                            version.number(),
-                                        ));
-                                    }
-                                }
-
-                                return Err(StoreError::Deleted(id.clone()));
+                            if version.number() == existing.number() {
+                                return Err(StoreError::Conflict(id.clone(), version.number()));
                             }
                         }
+
+                        return Err(StoreError::Deleted(id.clone()));
                     }
                 }
             }
 
             Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>))
         } else {
-            Ok(())
+            Ok(version)
         }
     }
 }
@@ -439,7 +434,7 @@ where
                 } else {
                     &empty
                 };
-                let mut event = transcoder.decode(&schema, content.as_ref())?;
+                let event = transcoder.decode(&schema, content.as_ref())?;
 
                 if let Some(mask) = &mask {
                     version = version.mask(mask);
@@ -455,15 +450,15 @@ where
         id: &T,
         events: &[Box<dyn Event>],
         mut expected_version: Version,
-    ) -> Result<(), StoreError<T>> {
+    ) -> Result<Option<Version>, StoreError<T>> {
         if events.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
 
-        if expected_version != Version::default() {
-            if let Some(mask) = &*self.mask {
-                expected_version = expected_version.unmask(mask);
-            }
+        if expected_version != Version::default()
+            && let Some(mask) = &self.mask
+        {
+            expected_version = expected_version.unmask(mask);
         }
 
         if expected_version.invalid() {
@@ -472,13 +467,17 @@ where
 
         expected_version = expected_version.increment(ByOne);
 
-        if events.len() == 1 {
-            self.write_one(id, expected_version, &events[0]).await?;
+        let mut version = if events.len() == 1 {
+            self.write_one(id, expected_version, &events[0]).await?
         } else {
-            self.write_all(id, expected_version, events).await?;
+            self.write_all(id, expected_version, events).await?
+        };
+
+        if let Some(mask) = &self.mask {
+            version = version.mask(mask);
         }
 
-        Ok(())
+        Ok(Some(version))
     }
 
     async fn delete(&self, id: &T) -> Result<(), StoreError<T>> {

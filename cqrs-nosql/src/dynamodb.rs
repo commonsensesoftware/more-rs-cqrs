@@ -8,11 +8,11 @@ pub use snapshot::SnapshotStore;
 
 use crate::BoxErr;
 use aws_sdk_dynamodb::{
+    Client,
     types::{
         AttributeValue::{self, S},
         DeleteRequest, WriteRequest,
     },
-    Client,
 };
 use cfg_if::cfg_if;
 use cqrs::snapshot::Retention;
@@ -59,10 +59,10 @@ fn coerce<T: FromStr + Default>(
     attributes: &HashMap<String, AttributeValue>,
     select: fn(&AttributeValue) -> Result<&String, &AttributeValue>,
 ) -> T {
-    if let Some(attribute) = attributes.get(name) {
-        if let Ok(value) = select(attribute) {
-            return value.parse::<T>().unwrap_or_default();
-        }
+    if let Some(attribute) = attributes.get(name)
+        && let Ok(value) = select(attribute)
+    {
+        return value.parse::<T>().unwrap_or_default();
     }
 
     T::default()
@@ -119,11 +119,11 @@ async fn delete_all(
                         continue;
                     }
                 }
-            } else if let Some(keep) = retention.count {
-                if kept < keep {
-                    kept += 1;
-                    continue;
-                }
+            } else if let Some(keep) = retention.count
+                && kept < keep
+            {
+                kept += 1;
+                continue;
             }
         }
 
@@ -152,7 +152,7 @@ async fn delete_all(
             // add an artificial yield so we don't get throttled
             // no there is no direct dependency on tokio to use the async variant
             // REF: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/TroubleshootingThrottlingOnDemand.html
-            if (count * MAX_BATCH_SIZE) % 750 == 0 {
+            if (count * MAX_BATCH_SIZE).is_multiple_of(750) {
                 thread::sleep(Duration::from_secs(1));
             }
         }

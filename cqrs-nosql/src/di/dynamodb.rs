@@ -3,15 +3,15 @@ use aws_config::SdkConfig;
 use aws_sdk_dynamodb::Client;
 use cfg_if::cfg_if;
 use cqrs::{
+    Aggregate, Clock, Mask, Repository,
     di::AggregateBuilder,
     event::{self, Event},
     message::Transcoder,
     snapshot::{self, Snapshot},
-    Aggregate, Clock, Mask, Repository,
 };
 use di::{
-    exactly_one, exactly_one_with_key, singleton_as_self, singleton_with_key, zero_or_one,
-    zero_or_one_with_key, Ref, ServiceCollection,
+    Ref, ServiceCollection, exactly_one, exactly_one_with_key, singleton_as_self,
+    singleton_with_key, zero_or_one, zero_or_one_with_key,
 };
 use options::OptionsSnapshot;
 use std::{any::type_name, marker::PhantomData, str::FromStr, sync::Arc};
@@ -107,10 +107,10 @@ where
                         builder = builder.mask(mask);
                     }
 
-                    if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>() {
-                        if let Some(client) = options.get(Some(table)).as_ref() {
-                            builder = builder.client(client.clone());
-                        }
+                    if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>()
+                        && let Some(client) = options.get(Some(table)).as_ref()
+                    {
+                        builder = builder.client(client.clone());
                     }
 
                     Ref::new(builder.build().unwrap())
@@ -255,10 +255,10 @@ where
 
                     if let Some(client) = &client {
                         builder = builder.client(client.clone());
-                    } else if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>() {
-                        if let Some(client) = options.get(Some(table)).as_ref() {
-                            builder = builder.client(client.clone());
-                        }
+                    } else if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>()
+                        && let Some(client) = options.get(Some(table)).as_ref()
+                    {
+                        builder = builder.client(client.clone());
                     }
 
                     Ref::new(builder.build().unwrap())
@@ -315,10 +315,10 @@ where
 
                     if let Some(client) = &client {
                         builder = builder.client(client.clone());
-                    } else if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>() {
-                        if let Some(client) = options.get(Some(table)).as_ref() {
-                            builder = builder.client(client.clone());
-                        }
+                    } else if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>()
+                        && let Some(client) = options.get(Some(table)).as_ref()
+                    {
+                        builder = builder.client(client.clone());
                     }
 
                     if allow_delete {
@@ -346,11 +346,10 @@ cfg_if! {
         ) -> Client {
             if let Some(client) = client {
                 return client.clone();
-            } else if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>() {
-                if let Some(client) = options.get(Some(table)).as_ref() {
+            } else if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>()
+                && let Some(client) = options.get(Some(table)).as_ref() {
                     return client.clone();
                 }
-            }
             let config = if let Some(config) = config.take() {
                 config
             } else {
