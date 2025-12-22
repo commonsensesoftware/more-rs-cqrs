@@ -41,7 +41,6 @@ mod projectors {
     #[async_trait]
     impl Receiver<Debited> for StatementGenerator {
         async fn receive(&mut self, event: &Debited) -> Result<(), Box<dyn Error + Send>> {
-            self.output.set_version(event.version());
             self.output.balance -= event.amount;
             Ok(())
         }
@@ -50,7 +49,6 @@ mod projectors {
     #[async_trait]
     impl Receiver<Credited> for StatementGenerator {
         async fn receive(&mut self, event: &Credited) -> Result<(), Box<dyn Error + Send>> {
-            self.output.set_version(event.version());
             self.output.balance += event.amount;
             Ok(())
         }
@@ -157,10 +155,10 @@ mod projectors {
         async fn save(
             &self,
             _id: &u64,
-            _events: &mut [Box<dyn Event>],
+            _events: &[Box<dyn Event>],
             _expected_version: Version,
-        ) -> Result<(), StoreError<u64>> {
-            Ok(())
+        ) -> Result<Option<Version>, StoreError<u64>> {
+            Ok(None)
         }
     }
 

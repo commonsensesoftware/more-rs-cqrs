@@ -1,12 +1,13 @@
-use super::{coerce, delete_all, greater_than, less_than, Builder};
+use super::{Builder, coerce, delete_all, greater_than, less_than};
 use crate::{
-    version::{from_sort_key, new_version},
     BoxErr, NoSqlVersion,
     NoSqlVersionPart::{Sequence, Version as ByOne},
+    version::{from_sort_key, new_version},
 };
 use async_stream::try_stream;
 use async_trait::async_trait;
 use aws_sdk_dynamodb::{
+    Client,
     operation::{
         query::builders::QueryFluentBuilder,
         transact_write_items::TransactWriteItemsError::TransactionCanceledException,
@@ -16,12 +17,12 @@ use aws_sdk_dynamodb::{
         AttributeValue::{self as Attr, B, N, S},
         Put, TransactWriteItem, Update,
     },
-    Client,
 };
 use cqrs::{
+    Clock, Mask, Range, Version,
     event::{Delete, Event, EventStream, IdStream, Predicate, PredicateBuilder, Store, StoreError},
     message::{Schema, Transcoder},
-    snapshot, Clock, Mask, Range, Version,
+    snapshot,
 };
 use std::{error::Error, fmt::Debug, str::FromStr, sync::Arc, time::SystemTime};
 
@@ -185,15 +186,11 @@ where
         &self,
         id: &T,
         version: Version,
-        event: &mut Box<dyn Event>,
-    ) -> Result<Version, StoreError<T>> {
+        event: &Box<dyn Event>,
+    ) -> Result<(), StoreError<T>> {
         let stored_on = crate::to_secs(self.clock.now());
-        let previous = event.version();
         let schema = event.schema();
-
-        event.set_version(version);
         let content = self.transcoder.encode(event.as_ref())?;
-        event.set_version(previous);
 
         if self.delete.supported() {
             if let Some(previous) = version.previous() {
@@ -266,7 +263,7 @@ where
 
                     return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
                 } else {
-                    return Ok(version);
+                    return Ok(());
                 }
             }
         }
@@ -298,7 +295,7 @@ where
                 Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>))
             }
         } else {
-            Ok(version)
+            Ok(())
         }
     }
 
@@ -306,8 +303,7 @@ where
         &self,
         id: &T,
         mut version: Version,
-        events: &mut [Box<dyn Event>],
-        versions: &mut Vec<Version>,
+        events: &[Box<dyn Event>],
     ) -> Result<(), StoreError<T>> {
         let stored_on = crate::to_secs(self.clock.now());
         let mut request = self.ddb.transact_write_items();
@@ -333,13 +329,8 @@ where
         }
 
         for event in events {
-            let previous = event.version();
             let schema = event.schema();
-
-            event.set_version(version);
             let content = self.transcoder.encode(event.as_ref())?;
-            event.set_version(previous);
-
             let mut put = Put::builder()
                 .table_name(&self.table)
                 .item("id", S(id.to_string()))
@@ -405,7 +396,7 @@ where
     fn clock(&self) -> Arc<dyn Clock> {
         self.clock.clone()
     }
-    
+
     async fn ids(&self, stored_on: Range<SystemTime>) -> IdStream<T> {
         let request = self
             .ddb
@@ -438,6 +429,7 @@ where
         Box::pin(try_stream! {
             while let Some(item) = items.next().await {
                 let attributes = item.box_err()?;
+                let mut version = from_sort_key(coerce("version", &attributes, Attr::as_n));
                 let schema = Schema::new(
                     coerce::<String>("kind", &attributes, Attr::as_s),
                     coerce("revision", &attributes, Attr::as_n));
@@ -450,10 +442,10 @@ where
                 let mut event = transcoder.decode(&schema, content.as_ref())?;
 
                 if let Some(mask) = &mask {
-                    event.set_version(event.version().mask(mask));
+                    version = version.mask(mask);
                 }
 
-                yield event;
+                yield Saved::versioned(event, version);
             }
         })
     }
@@ -461,7 +453,7 @@ where
     async fn save(
         &self,
         id: &T,
-        events: &mut [Box<dyn Event>],
+        events: &[Box<dyn Event>],
         mut expected_version: Version,
     ) -> Result<(), StoreError<T>> {
         if events.is_empty() {
@@ -469,8 +461,8 @@ where
         }
 
         if expected_version != Version::default() {
-            if let Some(mask) = self.mask.clone() {
-                expected_version = expected_version.unmask(&mask);
+            if let Some(mask) = &*self.mask {
+                expected_version = expected_version.unmask(mask);
             }
         }
 
@@ -479,23 +471,11 @@ where
         }
 
         expected_version = expected_version.increment(ByOne);
-        let mut versions = Vec::with_capacity(events.len());
 
         if events.len() == 1 {
-            versions.push(self.write_one(id, expected_version, &mut events[0]).await?);
+            self.write_one(id, expected_version, &events[0]).await?;
         } else {
-            self.write_all(id, expected_version, events, &mut versions)
-                .await?;
-        }
-
-        if let Some(mask) = &self.mask {
-            for (i, version) in versions.into_iter().enumerate() {
-                events[i].set_version(version.mask(mask));
-            }
-        } else {
-            for (i, version) in versions.into_iter().enumerate() {
-                events[i].set_version(version);
-            }
+            self.write_all(id, expected_version, events).await?;
         }
 
         Ok(())

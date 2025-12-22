@@ -19,7 +19,7 @@ di = ["dep:more-di"]
 cbor = ["dep:ciborium", "dep:serde", "uuid/serde"]
 json = ["dep:serde_json", "dep:serde", "uuid/serde"]
 message-pack = ["dep:rmp-serde", "dep:serde", "uuid/serde"]
-protobuf = ["dep:prost", "more-cqrs-macros/prost"]
+protobuf = ["dep:prost"]
 
 [dependencies]
 more-cqrs-macros = { path = "../cqrs-macros" }
@@ -30,7 +30,7 @@ ciborium = { version = "0.2", optional = true }
 futures = { workspace = true }
 futures-core = { workspace = true }
 more-di = { workspace = true, features = ["async"], optional = true }
-prost = { version = "0.13", optional = true }
+prost = { version = "0.14", optional = true }
 rc2 = "0.8"
 rmp-serde = { version = "1.3", optional = true }
 serde = { workspace = true, optional = true }

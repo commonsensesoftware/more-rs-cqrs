@@ -1,12 +1,15 @@
 use crate::{
-    event::{self, Event, EventStream, IdStream, Predicate, StoreError},
-    message::{Descriptor, Schema, Transcoder},
-    snapshot::{self, Retention, Snapshot, SnapshotError},
     Clock, Range, Version,
+    event::{self, Event, EventStream, IdStream, Predicate, StoreError},
+    message::{Descriptor, Saved, Schema, Transcoder},
+    snapshot::{self, Retention, Snapshot, SnapshotError},
 };
 use async_trait::async_trait;
 use cfg_if::cfg_if;
-use futures::stream;
+use futures::{
+    future::ready,
+    stream::{self, once},
+};
 use std::{
     collections::HashMap,
     fmt::Debug,
@@ -55,44 +58,6 @@ impl EncodedVersion for Version {
     }
 }
 
-struct Transaction<'a> {
-    state: Option<&'a mut [Box<dyn Event>]>,
-    versions: Vec<Version>,
-}
-
-impl<'a> Transaction<'a> {
-    fn begin(events: &'a mut [Box<dyn Event>]) -> Self {
-        let mut versions = Vec::with_capacity(events.len());
-
-        for event in &*events {
-            versions.push(event.version());
-        }
-
-        Self {
-            state: Some(events),
-            versions,
-        }
-    }
-
-    fn events(&mut self) -> &mut [Box<dyn Event>] {
-        self.state.as_deref_mut().unwrap()
-    }
-
-    fn commit(&mut self) {
-        self.state = None;
-    }
-}
-
-impl Drop for Transaction<'_> {
-    fn drop(&mut self) {
-        if let Some(events) = self.state.take() {
-            for (i, event) in events.iter_mut().enumerate() {
-                event.set_version(self.versions[i]);
-            }
-        }
-    }
-}
-
 #[derive(Clone)]
 struct Row {
     schema: Schema,
@@ -126,13 +91,14 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
         &self,
         id: &T,
         predicate: Option<&snapshot::Predicate>,
-    ) -> Result<Option<Box<dyn Snapshot>>, SnapshotError> {
+    ) -> Result<Option<Saved<Box<dyn Snapshot>>>, SnapshotError> {
         if let Some(descriptor) = self.load_raw(id, predicate).await? {
-            Ok(Some(
+            Ok(Some(Saved::versioned(
                 self.transcoder
                     .decode(&descriptor.schema, &descriptor.content)
                     .map_err(SnapshotError::InvalidEncoding)?,
-            ))
+                descriptor.version,
+            )))
         } else {
             Ok(None)
         }
@@ -172,20 +138,23 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
         Ok(None)
     }
 
-    async fn save(&self, id: &T, snapshot: Box<dyn Snapshot>) -> Result<(), SnapshotError> {
+    async fn save(
+        &self,
+        id: &T,
+        version: Version,
+        snapshot: Box<dyn Snapshot>,
+    ) -> Result<(), SnapshotError> {
         let mut table = self.table.write().unwrap();
 
         if let Some(row) = table.get(id) {
-            let current = self.transcoder.decode(&row.schema, &row.data)?;
-
-            if snapshot.version() <= current.version() {
+            if version <= row.version {
                 return Ok(());
             }
         }
 
         let row = Row {
             schema: snapshot.schema(),
-            version: snapshot.version(),
+            version,
             data: self
                 .transcoder
                 .encode(&*snapshot)
@@ -196,7 +165,7 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
         Ok(())
     }
 
-    async fn prune(&self, id: &T, _retention: Option<&Retention>) -> Result<(), SnapshotError> {       
+    async fn prune(&self, id: &T, _retention: Option<&Retention>) -> Result<(), SnapshotError> {
         let _ = self.table.write().unwrap().remove(id);
         Ok(())
     }
@@ -356,13 +325,15 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
         let table = self.table.read().unwrap();
         let ids: Vec<_> = table.keys().cloned().map(Ok).collect();
 
-        Box::pin(stream::iter(ids.into_iter()))
+        Box::pin(futures::stream::iter(ids.into_iter()))
     }
 
     async fn load<'a>(&self, predicate: Option<&'a Predicate<'a, T>>) -> EventStream<'a, T> {
         let snapshot = match self.get_snapshot(predicate).await {
             Ok(snapshot) => snapshot,
-            Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::from(error))])),
+            Err(error) => {
+                return Box::pin(once(ready(Err(StoreError::from(error)))));
+            }
         };
         let table = self.table.read().unwrap();
         let option = Arc::new(predicate);
@@ -395,13 +366,16 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
                             .flatten()
                             .filter(move |row| by(row, now, option.as_deref()))
                             .map(move |row| {
-                                transcoder
-                                    .decode(&row.schema, &row.data)
-                                    .map_err(StoreError::InvalidEncoding)
+                                Ok(Saved::versioned(
+                                    transcoder
+                                        .decode(&row.schema, &row.data)
+                                        .map_err(StoreError::InvalidEncoding)?,
+                                    row.version,
+                                ))
                             }),
                     ))
                 } else {
-                    Box::pin(futures::stream::iter(std::iter::empty()))
+                    Box::pin(stream::iter(std::iter::empty()))
                 }
             } else {
                 let transcoder = self.transcoder.clone();
@@ -429,9 +403,12 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
                         .flatten()
                         .filter(move |row| by(row, now, option.as_deref()))
                         .map(move |row| {
-                            transcoder
-                                .decode(&row.schema, &row.data)
-                                .map_err(StoreError::InvalidEncoding)
+                            Ok(Saved::versioned(
+                                transcoder
+                                    .decode(&row.schema, &row.data)
+                                    .map_err(StoreError::InvalidEncoding)?,
+                                row.version,
+                            ))
                         }),
                 ))
             }
@@ -440,9 +417,12 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
             let rows: Vec<_> = table.values().flatten().flatten().cloned().collect();
 
             Box::pin(stream::iter(rows.into_iter().map(move |row| {
-                transcoder
-                    .decode(&row.schema, &row.data)
-                    .map_err(StoreError::InvalidEncoding)
+                Ok(Saved::versioned(
+                    transcoder
+                        .decode(&row.schema, &row.data)
+                        .map_err(StoreError::InvalidEncoding)?,
+                    row.version,
+                ))
             })))
         }
     }
@@ -450,9 +430,13 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
     async fn save(
         &self,
         id: &T,
-        events: &mut [Box<dyn Event>],
+        events: &[Box<dyn Event>],
         expected_version: Version,
-    ) -> Result<(), StoreError<T>> {
+    ) -> Result<Option<Version>, StoreError<T>> {
+        if events.is_empty() {
+            return Ok(None);
+        }
+
         if events.len() > <Version as EncodedVersion>::max().sequence() as usize {
             return Err(StoreError::BatchTooLarge(
                 <Version as EncodedVersion>::max().sequence(),
@@ -473,11 +457,8 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
 
         let mut version = expected_version.next_version();
         let mut rows = Vec::new();
-        let mut tx = Transaction::begin(events);
 
-        for event in &mut *tx.events() {
-            event.set_version(version);
-
+        for event in events {
             let row = Row {
                 schema: event.schema(),
                 version,
@@ -491,15 +472,15 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
             version = version.next_sequence();
         }
 
+        version = rows.last().unwrap().version;
         let mut rows = vec![rows];
 
         table
             .entry(id.clone())
             .and_modify(|row| row.append(&mut rows))
             .or_insert(rows);
-        tx.commit();
 
-        Ok(())
+        Ok(Some(version))
     }
 
     async fn delete(&self, id: &T) -> Result<(), StoreError<T>> {
@@ -507,7 +488,7 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
             snapshots.prune(id, None).await?;
         }
 
-        let _ = self.table.write().unwrap().remove(id);        
+        let _ = self.table.write().unwrap().remove(id);
         Ok(())
     }
 }

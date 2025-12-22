@@ -1,11 +1,11 @@
-use crate::{event::Event, snapshot::Snapshot, Clock, Version};
+use crate::{Clock, Version, event::Event, message::Saved, snapshot::Snapshot};
 use async_trait::async_trait;
 use futures::Stream;
 use std::{error::Error, fmt::Debug, sync::Arc};
 
-/// Represents a [stream](Stream) of historic [events](Event).
+/// Represents a [stream](Stream) of [saved](Saved) [events](Event).
 pub type EventHistory<'a> =
-    dyn Stream<Item = Result<Box<dyn Event>, Box<dyn Error + Send>>> + Send + Unpin + 'a;
+    dyn Stream<Item = Result<Saved<Box<dyn Event>>, Box<dyn Error + Send>>> + Send + Unpin + 'a;
 
 /// Defines the behavior of an aggregate root.
 #[async_trait]
@@ -19,7 +19,7 @@ pub trait Aggregate: Send {
     fn version(&self) -> Version;
 
     /// Gets a set of uncommitted [changes](ChangeSet).
-    fn changes(&mut self) -> ChangeSet;
+    fn changes(&mut self) -> ChangeSet<'_>;
 
     /// Replays the specified event.
     ///
@@ -34,7 +34,7 @@ pub trait Aggregate: Send {
     ///
     /// * `history` - the sequence of [events](Event) to replay.
     async fn replay_all(&mut self, history: &mut EventHistory)
-        -> Result<(), Box<dyn Error + Send>>;
+    -> Result<(), Box<dyn Error + Send>>;
 
     /// Creates and returns a new [snapshot](Snapshot) of the aggregate.
     fn snapshot(&self) -> Option<Box<dyn Snapshot>> {
@@ -42,9 +42,9 @@ pub trait Aggregate: Send {
     }
 
     /// Sets the clock associated with the aggregate.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `clock` - the [clock](Clock) associated with the aggregate
     fn set_clock(&mut self, clock: Arc<dyn Clock>);
 }
@@ -89,10 +89,12 @@ impl<'a> ChangeSet<'a> {
     }
 
     /// Accepts all of the changes in the [change set](ChangeSet).
-    pub fn accept(&mut self) {
-        if let Some(event) = self.events.last() {
-            *self.version = event.version();
-            self.events.clear();
-        }
+    /// 
+    /// # Arguments
+    /// 
+    /// * `version` - the new, accepted [version](Version)
+    pub fn accept(&mut self, version: Version) {
+        *self.version = version;
+        self.events.clear();
     }
 }

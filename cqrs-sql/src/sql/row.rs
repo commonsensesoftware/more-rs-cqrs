@@ -65,26 +65,36 @@ pub trait IntoRows<'a, ID, M: ?Sized + Sync> {
     fn into_rows(self, context: Context<'a, ID, M>) -> Iter<'a, ID, M>;
 }
 
-impl<'a, ID> IntoRows<'a, ID, dyn Event> for &'a mut [Box<dyn Event>]
+impl<'a, ID> IntoRows<'a, ID, dyn Event> for &'a [Box<dyn Event>]
 where
     ID: Debug + Send,
 {
     fn into_rows(self, context: Context<'a, ID, dyn Event>) -> Iter<'a, ID, dyn Event> {
+        let version = context.version;
+
         Iter {
             messages: self,
             index: 0,
             stored_on: crate::to_secs(context.clock.now()),
             context,
+            version,
         }
     }
 }
 
 /// Represents an iterator of [rows](Row) for the provided [events](Event).
 pub struct Iter<'a, ID, M: ?Sized + Sync> {
-    messages: &'a mut [Box<M>],
+    messages: &'a [Box<M>],
     index: usize,
     stored_on: i64,
     context: Context<'a, ID, M>,
+    version: Version,
+}
+
+impl<'a, ID, M: ?Sized + Sync> Iter<'a, ID, M> {
+    pub fn version(&self) -> Version {
+        self.version
+    }
 }
 
 impl<'a, ID> Iterator for Iter<'a, ID, dyn Event>
@@ -97,27 +107,21 @@ where
         let i = self.index;
 
         if i < self.messages.len() {
-            let version = self.context.version;
-            let event = &mut self.messages[i];
+            let event = &self.messages[i];
             let schema = event.schema();
-            let current = event.version();
-
-            event.set_version(version);
-            let result = self.context.transcoder.encode(event.as_ref());
-            event.set_version(current);
-
-            let content = match result {
+            let content = match self.context.transcoder.encode(event.as_ref()) {
                 Ok(content) => content,
                 Err(error) => return Some(Err(StoreError::InvalidEncoding(error))),
             };
-
+            
             self.index += 1;
-            self.context.version = self.context.version.increment(Sequence);
+            self.version = self.context.version;
+            self.context.version = self.version.increment(Sequence);
 
             Some(Ok(Row::<ID> {
                 id: self.context.id.clone(),
-                version: version.number(),
-                sequence: version.sequence(),
+                version: self.version.number(),
+                sequence: self.version.sequence(),
                 stored_on: self.stored_on,
                 kind: schema.kind().into(),
                 revision: schema.version() as i16,

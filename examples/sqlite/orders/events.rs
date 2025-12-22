@@ -35,7 +35,6 @@ mod events {
         pub fn on<U: Into<Uuid>>(id: U, date: SystemTime) -> Self {
             Self {
                 id: Some(id.into()),
-                version: Default::default(),
                 date: date.to_secs(),
             }
         }
@@ -66,7 +65,6 @@ mod events {
         pub fn of<U: Into<Uuid>>(id: U, date: SystemTime, item: Item) -> Self {
             Self {
                 id: Some(id.into()),
-                version: Default::default(),
                 date: date.to_secs(),
                 item: Some(item),
             }
@@ -98,7 +96,6 @@ mod events {
         pub fn of<U: Into<Uuid>>(id: U, date: SystemTime, item: Item) -> Self {
             Self {
                 id: Some(id.into()),
-                version: Default::default(),
                 date: date.to_secs(),
                 item: Some(item),
             }
@@ -142,7 +139,6 @@ mod events {
         ) -> Self {
             Self {
                 id: Some(id.into()),
-                version: Default::default(),
                 date: date.to_secs(),
                 street,
                 region,
@@ -192,7 +188,6 @@ mod events {
         ) -> Self {
             Self {
                 id: Some(id.into()),
-                version: Default::default(),
                 date: date.to_secs(),
                 amount,
                 transaction_id,
@@ -226,7 +221,6 @@ mod events {
         pub fn on<U: Into<Uuid>>(id: U, date: SystemTime) -> Self {
             Self {
                 id: Some(id.into()),
-                version: Default::default(),
                 date: date.to_secs(),
             }
         }
@@ -250,7 +244,6 @@ mod events {
         pub fn on<U: Into<Uuid>>(id: U, date: SystemTime) -> Self {
             Self {
                 id: Some(id.into()),
-                version: Default::default(),
                 date: date.to_secs(),
             }
         }

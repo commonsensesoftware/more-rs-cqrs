@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
-use cqrs::{aggregate, event::Event, snapshot, transcode, when, Aggregate};
-use cqrs::event;
+use cqrs::{aggregate, event, snapshot, transcode, when};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Debug, Formatter, Result as FormatResult},
@@ -28,7 +27,6 @@ macro_rules! event_impl {
             pub fn new(id: String, date: SystemTime) -> Self {
                 Self {
                     id,
-                    version: Default::default(),
                     date: to_secs(date),
                 }
             }
@@ -47,7 +45,6 @@ macro_rules! event_impl {
             pub fn new(id: String, $amount: f32, date: SystemTime) -> Self {
                 Self {
                     id,
-                    version: Default::default(),
                     $amount,
                     date: to_secs(date),
                 }
@@ -208,15 +205,8 @@ impl Account {
         self.balance = statement.balance();
     }
 
-    fn snapshot(&self) -> Statement {
-        let mut statement = Statement::new(
-            self.id.clone(),
-            self.balance,
-            self.clock.now(),
-        );
-
-        statement.set_version(self.version);
-        statement
+    fn new_snapshot(&self) -> Statement {
+        Statement::new(self.id.clone(), self.balance, self.clock.now())
     }
 }
 

@@ -7,6 +7,7 @@
         "CBOR",
         "cqrs",
         "devcontainers",
+        "dynosaur",
         "ghaction",
         "Hasher",
         "nanos",

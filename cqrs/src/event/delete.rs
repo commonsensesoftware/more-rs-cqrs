@@ -1,7 +1,8 @@
 /// Defines the possible delete operation behaviors.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum Delete {
     /// Indicates that delete operations are unsupported.
+    #[default]
     Unsupported,
 
     /// Indicates that delete operations are supported.
@@ -19,11 +20,5 @@ impl Delete {
     #[inline]
     pub fn unsupported(&self) -> bool {
         matches!(self, Delete::Unsupported)
-    }
-}
-
-impl Default for Delete {
-    fn default() -> Self {
-        Self::Unsupported
     }
 }

@@ -111,6 +111,7 @@ fn implement_trait(
                 ///
                 /// * `event` - the [event](cqrs::event::Event) to record.
                 fn record<E: cqrs::event::Event + 'static>(&mut self, event: E) {
+                    use cqrs::Aggregate;
                     self.replay(&event);
                     self.events.push(Box::new(event));
                 }
@@ -127,7 +128,7 @@ fn implement_trait(
                     self.version
                 }
 
-                fn changes(&mut self) -> cqrs::ChangeSet {
+                fn changes(&mut self) -> cqrs::ChangeSet<'_> {
                     cqrs::ChangeSet::new(&mut self.events, &mut self.version)
                 }
 
@@ -192,15 +193,15 @@ fn implement_trait(
                         let __ret: Result<(), Box<dyn std::error::Error + Send>> = {
                             use futures::StreamExt;
                             while let Some(result) = history.next().await {
-                                let event = result?;
-                                __self.replay(&*event);
-                                __self.version = event.version();
+                                let saved = result?;
+                                __self.replay(saved.message().as_ref());
+                                __self.version = saved.version().unwrap_or_default();
                             }
-                            let uncommitted: Vec<_> = __self.events.drain(0..).collect();
+                            let uncommitted = std::mem::take(&mut __self.events);
                             for event in &uncommitted {
                                 __self.replay(event.as_ref());
                             }
-                            __self.events.extend(uncommitted.into_iter());
+                            __self.events = uncommitted;
                             Ok(())
                         };
                         #[allow(unreachable_code)] __ret
@@ -322,7 +323,7 @@ fn get_snapshot_function(impl_: &ItemImpl) -> Result<Option<TokenStream>> {
         if let ImplItem::Fn(func) = item {
             let name = &func.sig.ident;
 
-            if func.attrs.iter().any(|a| a.path().is_ident("snapshot")) {
+            if func.attrs.iter().any(|a| a.path().is_ident("new_snapshot")) {
                 if matched {
                     return Err(Error::new(
                         func.span(),
@@ -332,7 +333,7 @@ fn get_snapshot_function(impl_: &ItemImpl) -> Result<Option<TokenStream>> {
                     snapshot = Some(func);
                     matched = true;
                 }
-            } else if snapshot.is_none() && name == &Ident::new("snapshot", func.span()) {
+            } else if snapshot.is_none() && name == &Ident::new("new_snapshot", func.span()) {
                 snapshot = Some(func);
             }
         }

@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
-use syn::{meta::ParseNestedMeta, spanned::Spanned, *};
+use quote::{ToTokens, quote};
+use syn::{DeriveInput, LitInt, LitStr, Result, meta::ParseNestedMeta, parse2};
 
 pub(crate) struct EventAttribute {
     kind: Option<LitStr>,
@@ -51,65 +51,48 @@ impl TryFrom<proc_macro::TokenStream> for EventAttribute {
 }
 
 pub(crate) fn expand(attribute: EventAttribute, input: TokenStream) -> TokenStream {
-    let mut derive = parse2::<DeriveInput>(input).unwrap();
-    let mut invalid = true;
+    if let Ok(derive) = parse2::<DeriveInput>(input.clone()) {
+        let kind = attribute
+            .kind
+            .map(|kind| kind.to_token_stream())
+            .unwrap_or_else(|| quote! { std::any::type_name::<Self>() });
+        let version = attribute.version;
+        let name = &derive.ident;
+        let impl_ = quote! {
+            impl cqrs::event::Event for #name {
+                fn name(&self) -> &str {
+                    std::any::type_name::<Self>().rsplit_once("::").unwrap().1
+                }
 
-    if let Data::Struct(ref mut struct_) = derive.data {
-        if let Fields::Named(ref mut fields) = struct_.fields {
-            fields.named.push(crate::new_version_field());
-            invalid = false;
-        }
+                fn as_any(&self) -> &dyn std::any::Any {
+                    self
+                }
+            }
+
+            impl AsRef<dyn cqrs::event::Event + 'static> for #name {
+                fn as_ref(&self) -> &(dyn cqrs::event::Event + 'static) {
+                    self
+                }
+            }
+
+            impl cqrs::message::Message for #name {
+                fn schema(&self) -> cqrs::message::Schema {
+                    <Self as cqrs::message::Encoded>::schema()
+                }
+            }
+
+            impl cqrs::message::Encoded for #name {
+                fn schema() -> cqrs::message::Schema {
+                    cqrs::message::Schema::new(#kind, #version)
+                }
+            }
+        };
+
+        let mut output = quote! { #derive };
+
+        output.extend(impl_);
+        output
+    } else {
+        input
     }
-
-    if invalid {
-        return Error::new(derive.span(), "unable to implement the Event trait.")
-            .to_compile_error();
-    }
-
-    let kind = attribute
-        .kind
-        .map(|kind| kind.to_token_stream())
-        .unwrap_or_else(|| quote! { std::any::type_name::<Self>() });
-    let version = attribute.version;
-    let name = &derive.ident;
-    let getter = crate::new_version_getter();
-    let setter = crate::new_version_setter();
-    let impl_ = quote! {
-        impl cqrs::event::Event for #name {
-            fn name(&self) -> &str {
-                std::any::type_name::<Self>().rsplit_once("::").unwrap().1
-            }
-
-            #getter
-
-            #setter
-
-            fn as_any(&self) -> &dyn std::any::Any {
-                self
-            }
-        }
-
-        impl AsRef<dyn cqrs::event::Event + 'static> for #name {
-            fn as_ref(&self) -> &(dyn cqrs::event::Event + 'static) {
-                self
-            }
-        }
-
-        impl cqrs::message::Message for #name {
-            fn schema(&self) -> cqrs::message::Schema {
-                <Self as cqrs::message::Encoded>::schema()
-            }
-        }
-
-        impl cqrs::message::Encoded for #name {
-            fn schema() -> cqrs::message::Schema {
-                cqrs::message::Schema::new(#kind, #version)
-            }
-        }
-    };
-
-    let mut output = quote! { #derive };
-
-    output.extend(impl_);
-    output
 }

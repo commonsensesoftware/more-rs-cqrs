@@ -1,8 +1,8 @@
 use crate::{events::*, item::Item};
-use cqrs::{aggregate, when, Aggregate};
+use cqrs::{aggregate, when};
 use std::time::SystemTime;
-use uuid::Uuid;
 use thiserror::Error;
+use uuid::Uuid;
 
 enum State {
     Drafted,

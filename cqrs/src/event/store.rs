@@ -1,5 +1,8 @@
 use super::{Event, Predicate};
-use crate::{message::EncodingError, Clock, Range, Version};
+use crate::{
+    Clock, Range, Version,
+    message::{EncodingError, Saved},
+};
 use async_trait::async_trait;
 use futures::Stream;
 use std::{error::Error, fmt::Debug, pin::Pin, sync::Arc, time::SystemTime};
@@ -11,7 +14,7 @@ pub type IdStream<T> = Pin<Box<dyn Stream<Item = Result<T, StoreError<T>>> + Sen
 
 /// Represents a stored event [stream](Stream).
 pub type EventStream<'a, T> =
-    Pin<Box<dyn Stream<Item = Result<Box<dyn Event>, StoreError<T>>> + Send + 'a>>;
+    Pin<Box<dyn Stream<Item = Result<Saved<Box<dyn Event>>, StoreError<T>>> + Send + 'a>>;
 
 /// Defines the behavior of an event store.
 #[async_trait]
@@ -39,7 +42,7 @@ pub trait Store<T: Debug + Send = Uuid>: Send + Sync {
     /// * `predicate` - the optional [predicate](Predicate) used to filter events
     async fn load<'a>(&self, predicate: Option<&'a Predicate<'a, T>>) -> EventStream<'a, T>;
 
-    /// Saves a collection of events.
+    /// Saves a collection of events and returns the new [version](Version), if any.
     ///
     /// # Arguments
     ///
@@ -49,9 +52,9 @@ pub trait Store<T: Debug + Send = Uuid>: Send + Sync {
     async fn save(
         &self,
         id: &T,
-        events: &mut [Box<dyn Event>],
+        events: &[Box<dyn Event>],
         expected_version: Version,
-    ) -> Result<(), StoreError<T>>;
+    ) -> Result<Option<Version>, StoreError<T>>;
 
     /// Deletes a collection of events.
     ///

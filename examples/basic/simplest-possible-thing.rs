@@ -1,8 +1,8 @@
 use cqrs::{
-    aggregate,
+    Aggregate, Repository, aggregate,
     di::{CqrsExt, InMemoryExt},
     encoding::Uuid,
-    event, transcode, when, Aggregate, Repository,
+    event, transcode, when,
 };
 use di::ServiceCollection;
 use prost::Message;
@@ -44,11 +44,7 @@ mod events {
         }
 
         pub fn new(id: Uuid, name: String) -> Self {
-            Self {
-                id: Some(id),
-                version: Default::default(),
-                name,
-            }
+            Self { id: Some(id), name }
         }
     }
 
@@ -65,10 +61,7 @@ mod events {
         }
 
         pub fn new(id: Uuid) -> Self {
-            Self {
-                id: Some(id),
-                version: Default::default(),
-            }
+            Self { id: Some(id) }
         }
     }
 
@@ -94,7 +87,6 @@ mod events {
         pub fn new(id: Uuid, new_name: String) -> Self {
             Self {
                 id: Some(id),
-                version: Default::default(),
                 new_name,
             }
         }
@@ -209,9 +201,6 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
         },
         item.id().as_hyphenated(),
     );
-    println!(
-        "Versions are opaque to us, but storage is tracking it as {}",
-        item.version()
-    );
+
     Ok(())
 }

@@ -20,8 +20,8 @@ dynamodb = ["dep:aws-config", "dep:aws-sdk-dynamodb"]
 
 [dependencies]
 more-cqrs = { path = "../cqrs" }
-aws-config = { version = "1.5", optional = true }
-aws-sdk-dynamodb = { version = "1.23", optional = true }
+aws-config = { version = "1.8", optional = true }
+aws-sdk-dynamodb = { version = "1.101", optional = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 cfg-if = { workspace = true }

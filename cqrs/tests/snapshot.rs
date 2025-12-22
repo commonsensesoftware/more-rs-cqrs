@@ -1,15 +1,15 @@
 mod common;
 
 use common::{
+    BoxErr, TestResult,
     domain::{self, Account},
     projector::StatementGenerator,
-    BoxErr, TestResult,
 };
 use cqrs::{
+    Aggregate, Repository, VirtualClock,
     event::Store,
     in_memory::{EventStore, SnapshotStore},
     snapshot::{self, Store as _},
-    Aggregate, Repository, VirtualClock,
 };
 use std::sync::Arc;
 
@@ -61,7 +61,7 @@ async fn account_should_replay_all_history_with_snapshot() -> TestResult {
     repository.save(&mut account).await.box_err()?;
 
     if let Some(snapshot) = account.snapshot() {
-        snapshots.save(account.id(), snapshot).await.box_err()?;
+        snapshots.save(account.id(), account.version(), snapshot).await.box_err()?;
     }
 
     account.credit(25.0);
@@ -99,7 +99,7 @@ async fn account_should_replay_all_history_with_snapshot_from_projector() -> Tes
     let snapshot = projector.run(&id).await?;
 
     snapshots
-        .save(account.id(), Box::new(snapshot))
+        .save(account.id(), account.version(), Box::new(snapshot))
         .await
         .box_err()?;
     account.credit(25.0);
@@ -117,16 +117,15 @@ async fn account_should_replay_all_history_with_snapshot_from_projector() -> Tes
 fn di_should_register_expected_descriptors_after_drop() {
     // arrange
     use common::domain::transcoder::{events, snapshots};
-    use cqrs::di::*;  
+    use cqrs::di::*;
     let mut services = di::ServiceCollection::new();
 
     // act
-    services
-        .add_cqrs(|options| {
-            options.transcoders.events.push(events());
-            options.transcoders.snapshots.push(snapshots());
-            options.store::<Account>().in_memory().with().snapshots();
-        });
+    services.add_cqrs(|options| {
+        options.transcoders.events.push(events());
+        options.transcoders.snapshots.push(snapshots());
+        options.store::<Account>().in_memory().with().snapshots();
+    });
 
     // assert
     assert_eq!(services.len(), 7);
@@ -159,7 +158,7 @@ async fn account_should_replay_all_history_with_snapshot_using_di() -> TestResul
     repository.save(&mut account).await.box_err()?;
 
     if let Some(snapshot) = account.snapshot() {
-        snapshots.save(account.id(), snapshot).await.box_err()?;
+        snapshots.save(account.id(), account.version(), snapshot).await.box_err()?;
     }
 
     account.credit(25.0);

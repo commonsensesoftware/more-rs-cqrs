@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
-use syn::{meta::ParseNestedMeta, spanned::Spanned, *};
+use quote::{ToTokens, quote};
+use syn::{DeriveInput, LitInt, LitStr, Result, meta::ParseNestedMeta, parse2};
 
 pub(crate) struct SnapshotAttribute {
     kind: Option<LitStr>,
@@ -51,39 +51,15 @@ impl TryFrom<proc_macro::TokenStream> for SnapshotAttribute {
 }
 
 pub(crate) fn expand(attribute: SnapshotAttribute, input: TokenStream) -> TokenStream {
-    if let Ok(mut derive) = parse2::<DeriveInput>(input.clone()) {
-        let mut invalid = true;
-
-        if let Data::Struct(ref mut struct_) = derive.data {
-            if let Fields::Named(ref mut fields) = struct_.fields {
-                fields.named.push(crate::new_version_field());
-                invalid = false;
-            }
-        }
-
-        if invalid {
-            return Error::new(derive.span(), "unable to implement the Snapshot trait.")
-                .to_compile_error();
-        }
-
+    if let Ok(derive) = parse2::<DeriveInput>(input.clone()) {
         let kind = attribute
             .kind
             .map(|kind| kind.to_token_stream())
             .unwrap_or_else(|| quote! { std::any::type_name::<Self>() });
         let version = attribute.version;
         let name = &derive.ident;
-        let getter = crate::new_version_getter();
-        let setter = crate::new_version_setter();
         let impl_ = quote! {
-            impl cqrs::snapshot::Snapshot for Statement {
-                fn version(&self) -> cqrs::Version {
-                    cqrs::event::Event::version(self)
-                }
-
-                fn set_version(&mut self, version: cqrs::Version) {
-                    cqrs::event::Event::set_version(self, version)
-                }
-
+            impl cqrs::snapshot::Snapshot for #name {
                 fn as_any(&self) -> &dyn std::any::Any {
                     self
                 }
@@ -99,10 +75,6 @@ pub(crate) fn expand(attribute: SnapshotAttribute, input: TokenStream) -> TokenS
                 fn name(&self) -> &str {
                     std::any::type_name::<Self>().rsplit_once("::").unwrap().1
                 }
-
-                #getter
-
-                #setter
 
                 fn as_any(&self) -> &dyn std::any::Any {
                     self

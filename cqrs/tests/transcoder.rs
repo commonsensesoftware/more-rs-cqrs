@@ -1,13 +1,13 @@
 mod common;
 
 use common::domain::{self, Credited};
-use cqrs::{message::Encoded, Version};
+use cqrs::message::Encoded;
 
 #[test]
 fn transcoder_should_roundtrip_event() {
     // arrange
     let transcoder = domain::transcoder::events();
-    let expected = Credited::new("42", Version::new(1), 50.0);
+    let expected = Credited::new("42", 50.0);
 
     // act
     let event = transcoder.encode(&expected).unwrap();

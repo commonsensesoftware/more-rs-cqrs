@@ -1,7 +1,7 @@
 use crate::sql::{self, greater_than, less_than};
 use cqrs::{
-    event::{Predicate, StoreError},
     Range,
+    event::{Predicate, StoreError},
 };
 use sqlx::{Database, Encode, Executor, FromRow, IntoArguments, QueryBuilder, Transaction, Type};
 use std::{error::Error, fmt::Debug, ops::Bound, time::SystemTime};
@@ -76,7 +76,8 @@ where
         }
     }
 
-    let mut select = QueryBuilder::new("SELECT type, revision, content FROM ");
+    const INIT: &str = "SELECT type, revision, version, sequence, content FROM ";
+    let mut select = QueryBuilder::new(INIT);
 
     select.push(table.quote());
 

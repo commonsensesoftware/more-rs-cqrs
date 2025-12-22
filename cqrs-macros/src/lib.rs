@@ -2,70 +2,14 @@ extern crate proc_macro;
 
 mod aggregate;
 
-#[cfg(feature = "prost")]
-pub(crate) mod config;
-
 mod event;
 mod projectors;
 mod snapshot;
 mod transcode;
 
 use proc_macro::TokenStream;
-use quote::quote;
-use syn::{parse::Parser, parse_macro_input, Field};
+use syn::parse_macro_input;
 use transcode::TranscodeAttribute;
-
-pub(crate) fn new_version_field() -> Field {
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "prost")] {
-            let config = crate::config::get();
-            let tag = config.fields.prost.version.tag.to_string();
-
-            Field::parse_named.parse2(quote! {
-                #[prost(message, tag = #tag)]
-                version: Option<cqrs::Version>
-            }).unwrap()
-        } else {
-            Field::parse_named.parse2(quote! { version: cqrs::Version }).unwrap()
-        }
-    }
-}
-
-pub(crate) fn new_version_getter() -> proc_macro2::TokenStream {
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "prost")] {
-            quote! {
-                fn version(&self) -> cqrs::Version {
-                    self.version.unwrap_or_default()
-                }
-            }
-        } else {
-            quote! {
-                fn version(&self) -> cqrs::Version {
-                    self.version
-                }
-            }
-        }
-    }
-}
-
-pub(crate) fn new_version_setter() -> proc_macro2::TokenStream {
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "prost")] {
-            quote! {
-                fn set_version(&mut self, version: cqrs::Version) {
-                    self.version = Some(version);
-                }
-            }
-        } else {
-            quote! {
-                fn set_version(&mut self, version: cqrs::Version) {
-                    self.version = version;
-                }
-            }
-        }
-    }
-}
 
 /// Represents the metadata used to identify the function invoked when an event occurs.
 ///

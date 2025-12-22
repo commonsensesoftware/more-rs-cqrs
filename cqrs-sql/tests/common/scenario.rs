@@ -41,6 +41,6 @@ pub async fn new_monthly_statement<S: snapshot::Store<String>>(
 ) -> Result<(), Box<dyn Error + 'static>> {
     let account = repository.get(id, None).await?;
     let statement = account.snapshot().unwrap();
-    snapshots.save(id, statement).await?;
+    snapshots.save(id, account.version(), statement).await?;
     Ok(())
 }

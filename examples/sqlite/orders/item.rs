@@ -16,12 +16,7 @@ pub struct Item {
 }
 
 impl Item {
-    pub fn new<S: Into<String>>(
-        sku: S,
-        name: S,
-        price: f32,
-        quantity: u32
-    ) -> Self {
+    pub fn new<S: Into<String>>(sku: S, name: S, price: f32, quantity: u32) -> Self {
         Self {
             sku: sku.into(),
             name: name.into(),

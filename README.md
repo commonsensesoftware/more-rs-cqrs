@@ -19,8 +19,8 @@ You may be looking for:
 
 - [x] Provide fundamental core abstractions
 - [x] Provide support for SQL-based storage
-- [ ] Provide support for NoSQL-based storage
-- [ ] Provide tooling for snapshots
+- [x] Provide support for NoSQL-based storage
+- [x] Provide tooling for snapshots
 - [ ] Provide tooling for projections into materialized views
 
 ## Design Tenets

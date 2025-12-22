@@ -4,9 +4,9 @@ mod events;
 mod item;
 mod order;
 
-use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
+use aws_config::{BehaviorVersion, meta::region::RegionProviderChain};
 use aws_sdk_dynamodb::config::Credentials;
-use cqrs::{di::CqrsExt, Clock, Repository, RepositoryError, SecureMask, StoreMigrator};
+use cqrs::{Clock, Repository, RepositoryError, SecureMask, StoreMigrator, di::CqrsExt};
 use cqrs_nosql::DynamoDbExt;
 use di::ServiceCollection;
 use events::transcoder::events;
@@ -17,7 +17,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use testcontainers_modules::{dynamodb_local::DynamoDb, testcontainers::runners::AsyncRunner};
-use time::{format_description, Duration, OffsetDateTime, UtcOffset};
+use time::{Duration, OffsetDateTime, UtcOffset, format_description};
 use uuid::Uuid;
 
 fn format_date(date: Option<SystemTime>) -> String {

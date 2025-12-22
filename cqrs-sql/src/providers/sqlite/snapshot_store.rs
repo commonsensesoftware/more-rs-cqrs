@@ -1,14 +1,13 @@
 use crate::{
-    new_version,
-    snapshot::{command, Prune},
+    BoxErr, SqlStoreBuilder, SqlVersion, new_version,
+    snapshot::{Prune, command},
     sql::{self, Ident},
-    BoxErr, SqlStoreBuilder, SqlVersion,
 };
 use async_trait::async_trait;
 use cqrs::{
-    message::{Descriptor, Schema, Transcoder},
+    Clock, Mask, Version,
+    message::{Descriptor, Saved, Schema, Transcoder},
     snapshot::{Predicate, Retention, Snapshot, SnapshotError, Store},
-    Clock, Mask,
 };
 use futures::StreamExt;
 use sqlx::{Connection, Decode, Encode, Pool, Row, Sqlite, Type};
@@ -76,15 +75,13 @@ where
         &self,
         id: &ID,
         predicate: Option<&Predicate>,
-    ) -> Result<Option<Box<dyn Snapshot>>, SnapshotError> {
+    ) -> Result<Option<Saved<Box<dyn Snapshot>>>, SnapshotError> {
         if let Some(descriptor) = self.load_raw(id, predicate).await? {
-            let mut snapshot = self
-                .transcoder
-                .decode(&descriptor.schema, &descriptor.content)?;
-
-            snapshot.set_version(descriptor.version);
-
-            Ok(Some(snapshot))
+            Ok(Some(Saved::versioned(
+                self.transcoder
+                    .decode(&descriptor.schema, &descriptor.content)?,
+                descriptor.version,
+            )))
         } else {
             Ok(None)
         }
@@ -122,12 +119,15 @@ where
         }
     }
 
-    async fn save(&self, id: &ID, snapshot: Box<dyn Snapshot>) -> Result<(), SnapshotError> {
-        let mut version = snapshot.version();
-
+    async fn save(
+        &self,
+        id: &ID,
+        mut version: Version,
+        snapshot: Box<dyn Snapshot>,
+    ) -> Result<(), SnapshotError> {
         if version != Default::default() {
-            if let Some(mask) = self.mask.clone() {
-                version = version.unmask(&mask);
+            if let Some(mask) = &self.mask {
+                version = version.unmask(mask);
             }
         }
 

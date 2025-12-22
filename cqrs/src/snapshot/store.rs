@@ -1,7 +1,8 @@
 use super::{Predicate, Retention, Snapshot};
 use crate::{
+    Version,
     event::StoreError,
-    message::{Descriptor, EncodingError},
+    message::{Descriptor, EncodingError, Saved},
 };
 use async_trait::async_trait;
 use std::{error::Error, fmt::Debug};
@@ -16,11 +17,11 @@ pub enum SnapshotError {
     InvalidEncoding(#[from] EncodingError),
 
     /// Indicates the [snapshot](Snapshot) [version](Version) is invalid.
-    /// 
+    ///
     /// # Remarks
-    /// 
+    ///
     /// An invalid version can most likely happen in one of the following scenarios:
-    /// 
+    ///
     /// * A user attempted to generate a [version](Version) explicitly
     /// * The backing store changed the [mask](crate::Mask) it uses
     /// * The backing store itself has changed
@@ -55,7 +56,7 @@ pub trait Store<T: Debug + Send = Uuid>: Send + Sync {
         &self,
         id: &T,
         predicate: Option<&Predicate>,
-    ) -> Result<Option<Box<dyn Snapshot>>, SnapshotError>;
+    ) -> Result<Option<Saved<Box<dyn Snapshot>>>, SnapshotError>;
 
     /// Loads a raw snapshot into a [message descriptor](Descriptor).
     ///
@@ -73,18 +74,25 @@ pub trait Store<T: Debug + Send = Uuid>: Send + Sync {
     ///
     /// # Arguments
     ///
+    /// * `id` - the identifier of the [snapshot](Snapshot) to save
+    /// * `version` - the [version](Version) of the [snapshot](Snapshot) to save
     /// * `snapshot` - the [snapshot](Snapshot) to save
-    async fn save(&self, id: &T, snapshot: Box<dyn Snapshot>) -> Result<(), SnapshotError>;
+    async fn save(
+        &self,
+        id: &T,
+        version: Version,
+        snapshot: Box<dyn Snapshot>,
+    ) -> Result<(), SnapshotError>;
 
     /// Prunes snapshots for the specified identifier using the specified retention policy.
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `id` - the identifier of the snapshots to delete
     /// * `retention` - the optional [retention](Retention) policy
-    /// 
+    ///
     /// # Remarks
-    /// 
+    ///
     /// If a [retention](Retention) policy is unspecified, then all snapshots are deleted.
     async fn prune(&self, id: &T, retention: Option<&Retention>) -> Result<(), SnapshotError>;
 }

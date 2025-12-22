@@ -1,6 +1,6 @@
-use cqrs::{aggregate, event, snapshot, transcode, when, Aggregate, Version};
-use std::time::{Duration, SystemTime};
+use cqrs::{aggregate, event, snapshot, transcode, when};
 use serde::{Deserialize, Serialize};
+use std::time::{Duration, SystemTime};
 
 // since this is a test crate, the test configuration needs to be
 // specified in order to expand macros
@@ -18,10 +18,9 @@ mod events {
     }
 
     impl Debited {
-        pub fn new<S: Into<String>>(id: S, version: Version, amount: f32) -> Self {
+        pub fn new<S: Into<String>>(id: S, amount: f32) -> Self {
             Self {
                 id: id.into(),
-                version,
                 amount,
             }
         }
@@ -35,10 +34,9 @@ mod events {
     }
 
     impl Credited {
-        pub fn new<S: Into<String>>(id: S, version: Version, amount: f32) -> Self {
+        pub fn new<S: Into<String>>(id: S, amount: f32) -> Self {
             Self {
                 id: id.into(),
-                version,
                 amount,
             }
         }
@@ -53,10 +51,9 @@ mod events {
     }
 
     impl Statement {
-        fn new<S: Into<String>>(id: S, version: Version, balance: f32) -> Self {
+        fn new<S: Into<String>>(id: S, balance: f32) -> Self {
             Self {
                 id: id.into(),
-                version,
                 balance,
                 date: SystemTime::now()
                     .duration_since(SystemTime::UNIX_EPOCH)
@@ -91,11 +88,11 @@ impl Account {
     }
 
     pub fn credit(&mut self, amount: f32) {
-        self.record(Credited::new(&self.id, self.version, amount));
+        self.record(Credited::new(&self.id, amount));
     }
 
     pub fn debit(&mut self, amount: f32) {
-        self.record(Debited::new(&self.id, self.version, amount));
+        self.record(Debited::new(&self.id, amount));
     }
 
     #[when]
@@ -116,7 +113,7 @@ impl Account {
         self.balance = snapshot.balance();
     }
 
-    fn snapshot(&self) -> Statement {
-        Statement::new(&self.id, self.version, self.balance)
+    fn new_snapshot(&self) -> Statement {
+        Statement::new(&self.id, self.balance)
     }
 }

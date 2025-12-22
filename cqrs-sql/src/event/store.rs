@@ -1,22 +1,22 @@
 use super::{command, get_snapshot, select_version};
 use crate::{
-    new_version,
+    BoxErr, SqlStoreBuilder, SqlVersion, SqlVersionPart, new_version,
     sql::{self, Context, Ident, IntoRows},
-    BoxErr, SqlStoreBuilder, SqlVersion, SqlVersionPart,
 };
 use async_stream::try_stream;
 use async_trait::async_trait;
 use cqrs::{
+    Clock, Mask, Range, Version,
     event::{Delete, Event, EventStream, IdStream, Predicate, Store, StoreError},
-    message::{Schema, Transcoder},
-    snapshot, Clock, Mask, Range, Version,
+    message::{Saved, Schema, Transcoder},
+    snapshot,
 };
 use futures::stream;
 use sqlx::{
     ColumnIndex, Connection, Database, Decode, Encode, Executor, FromRow, IntoArguments, Pool, Row,
     Type,
 };
-use std::{error::Error, fmt::Debug, sync::Arc, ops::Bound, time::SystemTime};
+use std::{error::Error, fmt::Debug, ops::Bound, sync::Arc, time::SystemTime};
 
 /// Represents a SQL [event store](Store).
 pub struct SqlStore<ID, DB: Database> {
@@ -126,7 +126,9 @@ where
         Box::pin(try_stream! {
             const TYPE: usize = 0;
             const REVISION: usize = 1;
-            const CONTENT: usize = 2;
+            const VERSION: usize = 2;
+            const SEQUENCE: usize = 3;
+            const CONTENT: usize = 4;
 
             let mut version = Bound::Unbounded;
 
@@ -135,7 +137,7 @@ where
 
                 if let Some(snapshot) = snapshot {
                     let event = transcoder.decode(&snapshot.schema, &snapshot.content)?;
-                    yield event;
+                    yield Saved::versioned(event, snapshot.version);
                 }
             }
 
@@ -149,13 +151,17 @@ where
                     row.get::<i16, _>(REVISION) as u8,
                 );
                 let content = row.get::<&[u8], _>(CONTENT);
-                let mut event = transcoder.decode(&schema, content)?;
+                let event = transcoder.decode(&schema, content)?;
+                let mut version = new_version(
+                    row.get::<i32, _>(VERSION),
+                    row.get::<i16, _>(SEQUENCE),
+                );
 
                 if let Some(mask) = &mask {
-                    event.set_version(event.version().mask(mask));
+                    version = version.mask(mask);
                 }
 
-                yield event;
+                yield Saved::versioned(event, version);
             }
         })
     }
@@ -163,16 +169,16 @@ where
     async fn save(
         &self,
         id: &ID,
-        events: &mut [Box<dyn Event>],
+        events: &[Box<dyn Event>],
         mut expected_version: Version,
-    ) -> Result<(), StoreError<ID>> {
+    ) -> Result<Option<Version>, StoreError<ID>> {
         if events.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
 
         if expected_version != Version::default() {
-            if let Some(mask) = self.mask.clone() {
-                expected_version = expected_version.unmask(&mask);
+            if let Some(mask) = &self.mask {
+                expected_version = expected_version.unmask(mask);
             }
         }
 
@@ -180,7 +186,6 @@ where
             return Err(StoreError::InvalidVersion);
         }
 
-        let mut versions = Vec::with_capacity(events.len());
         let context = Context {
             id: id.clone(),
             version: expected_version.increment(SqlVersionPart::Version),
@@ -191,7 +196,7 @@ where
         let first = if let Some(row) = rows.next() {
             row?
         } else {
-            return Ok(());
+            return Ok(None);
         };
 
         let mut db = self.pool.acquire().await.box_err()?;
@@ -209,13 +214,9 @@ where
             command::insert_transacted(&self.table, &first, &mut tx).await?;
             command::insert_transacted(&self.table, &second, &mut tx).await?;
 
-            versions.push(new_version(first.version, first.sequence));
-            versions.push(new_version(second.version, second.sequence));
-
-            for row in rows {
+            while let Some(row) = rows.next() {
                 let row = row?;
                 command::insert_transacted(&self.table, &row, &mut tx).await?;
-                versions.push(new_version(row.version, row.sequence));
             }
 
             tx.commit().await.box_err()?;
@@ -243,23 +244,17 @@ where
                         }
                     }
                     return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
-                } else {
-                    versions.push(new_version(first.version, first.sequence));
                 }
             }
         }
 
+        let mut version = rows.version();
+
         if let Some(mask) = &self.mask {
-            for (i, version) in versions.into_iter().enumerate() {
-                events[i].set_version(version.mask(mask));
-            }
-        } else {
-            for (i, version) in versions.into_iter().enumerate() {
-                events[i].set_version(version);
-            }
+            version = version.mask(mask);
         }
 
-        Ok(())
+        Ok(Some(version))
     }
 
     async fn delete(&self, id: &ID) -> Result<(), StoreError<ID>> {

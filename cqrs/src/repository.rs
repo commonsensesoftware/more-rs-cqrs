@@ -1,11 +1,11 @@
 use crate::{
+    Aggregate,
     event::{Predicate, PredicateBuilder, Store, StoreError},
     message::EncodingError,
-    Aggregate,
 };
 use cfg_if::cfg_if;
-use futures::{stream, StreamExt, TryStreamExt};
-use std::{error::Error, fmt::Debug, future::Future, pin::Pin, sync::Arc};
+use futures::{StreamExt, TryStreamExt, future::ready, stream::once};
+use std::{error::Error, fmt::Debug, sync::Arc};
 use thiserror::Error;
 
 /// Represents the possible repository errors.
@@ -100,41 +100,34 @@ where
     /// * `id` - the aggregate identifier
     /// * `predicate` - the [predicate](Predicate) used to filter [events](crate::event::Event), if any
     ///
-    #[allow(clippy::type_complexity)] // REF: https://github.com/rust-lang/rust/issues/112792
-    pub fn get<'a, 'b>(
-        &'a self,
-        id: &'b A::ID,
-        predicate: Option<&'b Predicate<'a, A::ID>>,
-    ) -> Pin<Box<dyn Future<Output = Result<A, RepositoryError<A::ID>>> + Send + 'b>>
-    where
-        'a: 'b,
-        Self: 'a,
-    {
-        Box::pin(async move {
-            let mut builder = PredicateBuilder::new(Some(id));
+    pub async fn get(
+        &self,
+        id: &A::ID,
+        predicate: Option<&Predicate<'_, A::ID>>,
+    ) -> Result<A, RepositoryError<A::ID>> {
+        let mut builder = PredicateBuilder::new(Some(id));
 
-            if let Some(predicate) = predicate {
-                builder = builder.merge(predicate);
-            }
+        if let Some(predicate) = predicate {
+            builder = builder.merge(predicate);
+        }
 
-            let predicate = builder.build();
-            let mut history = self.store.load(Some(&predicate)).await;
+        let predicate = builder.build();
+        let mut history = self.store.load(Some(&predicate)).await;
 
-            if let Some(first) = history.next().await {
-                let mut history = Box::pin(
-                    stream::iter(vec![first])
-                        .chain(history)
-                        .map_err(|e| Box::new(e) as Box<dyn Error + Send>),
-                );
-                let mut aggregate = A::default();
+        if let Some(first) = history.next().await {
+            let mut history = Box::pin(
+                once(ready(first))
+                    .chain(history)
+                    .map_err(|e| Box::new(e) as Box<dyn Error + Send>),
+            );
+            let mut aggregate = A::default();
 
-                aggregate.set_clock(self.store.clock());
-                aggregate.replay_all(&mut history).await?;
-                Ok(aggregate)
-            } else {
-                Err(RepositoryError::NotFound(id.clone()))
-            }
-        })
+            aggregate.set_clock(self.store.clock());
+            aggregate.replay_all(&mut history).await?;
+            Ok(aggregate)
+        } else {
+            Err(RepositoryError::NotFound(id.clone()))
+        }
     }
 
     /// Saves the specified [aggregate](Aggregate).
@@ -151,12 +144,14 @@ where
         }
 
         let expected_version = changes.expected_version();
-
-        self.store
+        let current_version = self
+            .store
             .save(&id, changes.uncommitted(), expected_version)
             .await?;
 
-        changes.accept();
+        if let Some(version) = current_version {
+            changes.accept(version);
+        }
 
         Ok(())
     }

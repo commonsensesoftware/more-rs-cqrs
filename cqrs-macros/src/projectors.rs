@@ -94,11 +94,11 @@ impl<'a> Projector<'a> {
         &self.context.target().generics
     }
 
-    fn output(&self) -> Option<StructField> {
+    fn output(&self) -> Option<StructField<'_>> {
         self.context.output()
     }
 
-    fn store(&self) -> StructField {
+    fn store(&self) -> StructField<'_> {
         self.context.store().unwrap()
     }
 
@@ -214,11 +214,11 @@ impl<'a> From<Projector<'a>> for TokenStream {
                             };
                             let mut stream = __self.#store.load(predicate).await;
                             while let Some(result) = stream.next().await {
-                                let event = result
+                                let saved = result
                                     .map_err(|e| {
                                         Box::new(e) as Box<dyn std::error::Error + Send>
                                     })?;
-                                let any = event.as_any();
+                                let any = saved.message().as_any();
                                 let id = any.type_id();
                                 #(if id == std::any::TypeId::of::<#event>() {
                                     <Self as cqrs::event::Receiver<#event>>::receive(
@@ -335,7 +335,7 @@ fn get_metadata(items: &mut [Item]) -> Result<Vec<Metadata>> {
     Ok(metadata)
 }
 
-fn get_projectors(items: &[Item], metadata: Vec<Metadata>) -> Result<Vec<Projector>> {
+fn get_projectors(items: &[Item], metadata: Vec<Metadata>) -> Result<Vec<Projector<'_>>> {
     let indexes: HashSet<_> = metadata.iter().map(|m| m.index).collect();
     let mut projectors = items
         .iter()

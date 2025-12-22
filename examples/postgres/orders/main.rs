@@ -4,7 +4,7 @@ mod events;
 mod item;
 mod order;
 
-use cqrs::{di::CqrsExt, Clock, Repository, RepositoryError, SecureMask, StoreMigrator};
+use cqrs::{Clock, Repository, RepositoryError, SecureMask, StoreMigrator, di::CqrsExt};
 use cqrs_sql::PostgresExt;
 use di::ServiceCollection;
 use events::transcoder::events;
@@ -15,7 +15,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
-use time::{format_description, Duration, OffsetDateTime, UtcOffset};
+use time::{Duration, OffsetDateTime, UtcOffset, format_description};
 use uuid::Uuid;
 
 fn format_date(date: Option<SystemTime>) -> String {

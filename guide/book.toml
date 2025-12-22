@@ -4,7 +4,7 @@ authors = ["Chris Martinez"]
 language = "en"
 
 [rust]
-edition = "2021"
+edition = "2024"
 
 [output.html]
 site-url = "/more-cqrs/"
