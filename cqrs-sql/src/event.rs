@@ -5,10 +5,10 @@ pub use store::SqlStore;
 
 use crate::SqlVersion;
 use cqrs::{
-    message::Descriptor,
-    event::Predicate,
-    snapshot::{SnapshotError, Store},
     Mask,
+    event::Predicate,
+    message::Descriptor,
+    snapshot::{SnapshotError, Store},
 };
 use std::{
     fmt::Debug,
@@ -74,15 +74,13 @@ pub(crate) async fn get_snapshot<'a, ID: Debug + Send>(
     snapshots: Option<&'a dyn Store<ID>>,
     predicate: Option<&Predicate<'a, ID>>,
 ) -> Result<Option<Descriptor>, SnapshotError> {
-    if let Some(snapshots) = snapshots {
-        if let Some(predicate) = predicate {
-            if predicate.load.snapshots {
-                if let Some(id) = predicate.id {
-                    let predicate = Some(predicate.into());
-                    return snapshots.load_raw(id, predicate.as_ref()).await;
-                }
-            }
-        }
+    if let Some(snapshots) = snapshots
+        && let Some(predicate) = predicate
+        && predicate.load.snapshots
+        && let Some(id) = predicate.id
+    {
+        let predicate = Some(predicate.into());
+        return snapshots.load_raw(id, predicate.as_ref()).await;
     }
 
     Ok(None)

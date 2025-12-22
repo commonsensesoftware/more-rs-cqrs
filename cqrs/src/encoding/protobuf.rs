@@ -137,11 +137,7 @@ impl Message for Uuid {
 
     fn clear(&mut self) {
         let mut bytes = self.0.into_bytes();
-
-        for byte in &mut bytes {
-            *byte = 0
-        }
-
+        bytes.fill(0);
         self.0 = uuid::Uuid::from_bytes(bytes);
     }
 }

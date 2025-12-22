@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use punctuated::Punctuated;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use std::{borrow::Cow, collections::HashSet};
 use syn::{spanned::Spanned, *};
 use token::Plus;
@@ -267,7 +267,6 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         } else {
             module.to_token_stream()
         }
-
     } else {
         Error::new(span, "#[projectors] can only be applied to a module.").to_compile_error()
     }
@@ -289,46 +288,45 @@ fn get_metadata(items: &mut [Item]) -> Result<Vec<Metadata>> {
     let mut metadata = Vec::new();
 
     for (i, item) in items.iter_mut().enumerate() {
-        if let Item::Struct(struct_) = item {
-            if let Some(attr) = remove_attribute(&mut struct_.attrs, "projector") {
-                let mut meta = Metadata::new(i);
+        if let Item::Struct(struct_) = item
+            && let Some(attr) = remove_attribute(&mut struct_.attrs, "projector")
+        {
+            let mut meta = Metadata::new(i);
 
-                if let Ok(path) = attr.parse_args::<Path>() {
-                    meta.id = Some(path);
-                }
-
-                for (j, field) in struct_.fields.iter_mut().enumerate() {
-                    if remove_attribute(&mut field.attrs, "output").is_some() {
-                        if meta.output.is_some() {
-                            return Err(Error::new(field.span(), "encountered multiple #[output]"));
-                        }
-
-                        meta.output = Some(j);
-                    } else if remove_attribute(&mut field.attrs, "store").is_some() {
-                        if meta.store.is_some() {
-                            return Err(Error::new(field.span(), "encountered multiple #[store]"));
-                        }
-
-                        meta.store = Some(j);
-                    }
-                }
-
-                if meta.output.is_none() || meta.store.is_none() {
-                    for (i, field) in struct_.fields.iter().enumerate() {
-                        if let Some(name) = &field.ident {
-                            if meta.output.is_none() && name == &Ident::new("output", name.span()) {
-                                meta.output = Some(i);
-                            } else if meta.store.is_none()
-                                && name == &Ident::new("store", name.span())
-                            {
-                                meta.store = Some(i);
-                            }
-                        }
-                    }
-                }
-
-                metadata.push(meta);
+            if let Ok(path) = attr.parse_args::<Path>() {
+                meta.id = Some(path);
             }
+
+            for (j, field) in struct_.fields.iter_mut().enumerate() {
+                if remove_attribute(&mut field.attrs, "output").is_some() {
+                    if meta.output.is_some() {
+                        return Err(Error::new(field.span(), "encountered multiple #[output]"));
+                    }
+
+                    meta.output = Some(j);
+                } else if remove_attribute(&mut field.attrs, "store").is_some() {
+                    if meta.store.is_some() {
+                        return Err(Error::new(field.span(), "encountered multiple #[store]"));
+                    }
+
+                    meta.store = Some(j);
+                }
+            }
+
+            if meta.output.is_none() || meta.store.is_none() {
+                for (i, field) in struct_.fields.iter().enumerate() {
+                    if let Some(name) = &field.ident {
+                        if meta.output.is_none() && name == &Ident::new("output", name.span()) {
+                            meta.output = Some(i);
+                        } else if meta.store.is_none() && name == &Ident::new("store", name.span())
+                        {
+                            meta.store = Some(i);
+                        }
+                    }
+                }
+            }
+
+            metadata.push(meta);
         }
     }
 
@@ -341,10 +339,10 @@ fn get_projectors(items: &[Item], metadata: Vec<Metadata>) -> Result<Vec<Project
         .iter()
         .enumerate()
         .filter_map(|(index, item)| {
-            if indexes.contains(&index) {
-                if let Item::Struct(struct_) = item {
-                    return Some(struct_);
-                }
+            if indexes.contains(&index)
+                && let Item::Struct(struct_) = item
+            {
+                return Some(struct_);
             }
 
             None
@@ -368,22 +366,16 @@ fn get_projectors(items: &[Item], metadata: Vec<Metadata>) -> Result<Vec<Project
 #[inline]
 fn get_receivers(items: &[Item]) -> impl Iterator<Item = (&Ident, &Type)> {
     items.iter().filter_map(|item| {
-        if let Item::Impl(block) = item {
-            if let Some((_, path, _)) = &block.trait_ {
-                if let Some(segment) = path.segments.last() {
-                    if segment.ident == Ident::new("Receiver", segment.span()) {
-                        if let PathArguments::AngleBracketed(generic) = &segment.arguments {
-                            if let Some(GenericArgument::Type(event)) = generic.args.first() {
-                                if let Type::Path(ty) = &*block.self_ty {
-                                    if let Some(struct_) = ty.path.get_ident() {
-                                        return Some((struct_, event));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if let Item::Impl(block) = item
+            && let Some((_, path, _)) = &block.trait_
+            && let Some(segment) = path.segments.last()
+            && segment.ident == Ident::new("Receiver", segment.span())
+            && let PathArguments::AngleBracketed(generic) = &segment.arguments
+            && let Some(GenericArgument::Type(event)) = generic.args.first()
+            && let Type::Path(ty) = &*block.self_ty
+            && let Some(struct_) = ty.path.get_ident()
+        {
+            return Some((struct_, event));
         }
         None
     })
@@ -418,16 +410,13 @@ fn match_id_type_arg(generics: &Generics) -> Option<&Type> {
 
 fn match_id_bound(bounds: &Punctuated<TypeParamBound, Plus>) -> Option<&Type> {
     for bound in bounds {
-        if let TypeParamBound::Trait(trait_) = bound {
-            if let Some(segment) = trait_.path.segments.last() {
-                if segment.ident == Ident::new("Store", bound.span()) {
-                    if let PathArguments::AngleBracketed(generic) = &segment.arguments {
-                        if let Some(GenericArgument::Type(id)) = generic.args.first() {
-                            return Some(id);
-                        }
-                    }
-                }
-            }
+        if let TypeParamBound::Trait(trait_) = bound
+            && let Some(segment) = trait_.path.segments.last()
+            && segment.ident == Ident::new("Store", bound.span())
+            && let PathArguments::AngleBracketed(generic) = &segment.arguments
+            && let Some(GenericArgument::Type(id)) = generic.args.first()
+        {
+            return Some(id);
         }
     }
 
@@ -444,17 +433,17 @@ fn resolve_store_id_type<'a>(ty: &'a Type, name: &Ident) -> Option<&'a Type> {
         Type::Path(ty) => {
             if let Some(ty) = ty.path.segments.last() {
                 if ty.ident == *name {
-                    if let PathArguments::AngleBracketed(generic) = &ty.arguments {
-                        if let Some(GenericArgument::Type(id)) = generic.args.first() {
-                            return Some(id);
-                        }
+                    if let PathArguments::AngleBracketed(generic) = &ty.arguments
+                        && let Some(GenericArgument::Type(id)) = generic.args.first()
+                    {
+                        return Some(id);
                     }
                 } else if let PathArguments::AngleBracketed(generic) = &ty.arguments {
                     for arg in &generic.args {
-                        if let GenericArgument::Type(ty) = arg {
-                            if let Some(id) = resolve_store_id_type(ty, name) {
-                                return Some(id);
-                            }
+                        if let GenericArgument::Type(ty) = arg
+                            && let Some(id) = resolve_store_id_type(ty, name)
+                        {
+                            return Some(id);
                         }
                     }
                 }
@@ -462,21 +451,21 @@ fn resolve_store_id_type<'a>(ty: &'a Type, name: &Ident) -> Option<&'a Type> {
         }
         Type::TraitObject(trait_) => {
             for bound in &trait_.bounds {
-                if let TypeParamBound::Trait(bound) = bound {
-                    if let Some(ty) = bound.path.segments.last() {
-                        if ty.ident == *name {
-                            if let PathArguments::AngleBracketed(generic) = &ty.arguments {
-                                if let Some(GenericArgument::Type(id)) = generic.args.first() {
-                                    return Some(id);
-                                }
-                            }
-                        } else if let PathArguments::AngleBracketed(generic) = &ty.arguments {
-                            for arg in &generic.args {
-                                if let GenericArgument::Type(ty) = arg {
-                                    if let Some(id) = resolve_store_id_type(ty, name) {
-                                        return Some(id);
-                                    }
-                                }
+                if let TypeParamBound::Trait(bound) = bound
+                    && let Some(ty) = bound.path.segments.last()
+                {
+                    if ty.ident == *name {
+                        if let PathArguments::AngleBracketed(generic) = &ty.arguments
+                            && let Some(GenericArgument::Type(id)) = generic.args.first()
+                        {
+                            return Some(id);
+                        }
+                    } else if let PathArguments::AngleBracketed(generic) = &ty.arguments {
+                        for arg in &generic.args {
+                            if let GenericArgument::Type(ty) = arg
+                                && let Some(id) = resolve_store_id_type(ty, name)
+                            {
+                                return Some(id);
                             }
                         }
                     }

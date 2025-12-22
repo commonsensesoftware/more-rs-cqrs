@@ -146,10 +146,10 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
     ) -> Result<(), SnapshotError> {
         let mut table = self.table.write().unwrap();
 
-        if let Some(row) = table.get(id) {
-            if version <= row.version {
-                return Ok(());
-            }
+        if let Some(row) = table.get(id)
+            && version <= row.version
+        {
+            return Ok(());
         }
 
         let row = Row {
@@ -238,15 +238,13 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> EventStore<T> {
         &self,
         predicate: Option<&Predicate<'_, T>>,
     ) -> Result<Option<Descriptor>, SnapshotError> {
-        if let Some(snapshots) = self.snapshots.as_deref() {
-            if let Some(predicate) = predicate {
-                if predicate.load.snapshots {
-                    if let Some(id) = predicate.id {
-                        let predicate = Some(predicate.into());
-                        return snapshots.load_raw(id, predicate.as_ref()).await;
-                    }
-                }
-            }
+        if let Some(snapshots) = self.snapshots.as_deref()
+            && let Some(predicate) = predicate
+            && predicate.load.snapshots
+            && let Some(id) = predicate.id
+        {
+            let predicate = Some(predicate.into());
+            return snapshots.load_raw(id, predicate.as_ref()).await;
         }
 
         Ok(None)
@@ -325,7 +323,7 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
         let table = self.table.read().unwrap();
         let ids: Vec<_> = table.keys().cloned().map(Ok).collect();
 
-        Box::pin(futures::stream::iter(ids.into_iter()))
+        Box::pin(futures::stream::iter(ids))
     }
 
     async fn load<'a>(&self, predicate: Option<&'a Predicate<'a, T>>) -> EventStream<'a, T> {

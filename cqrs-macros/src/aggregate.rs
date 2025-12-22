@@ -247,23 +247,19 @@ fn new_function_to_event_map(impl_: &ItemImpl) -> Result<Vec<(&Ident, &Ident)>> 
 }
 
 fn get_mapped_function<'a>(args: &[&'a FnArg]) -> Option<&'a Ident> {
-    if args.len() == 2 {
-        if let FnArg::Receiver(self_) = args[0] {
-            if self_.reference.is_some() && self_.mutability.is_some() {
-                if let FnArg::Typed(event) = args[1] {
-                    if let Type::Reference(ref_) = event.ty.as_ref() {
-                        if ref_.mutability.is_none() {
-                            if let Type::Path(type_) = ref_.elem.as_ref() {
-                                return type_.path.get_ident();
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    if args.len() == 2
+        && let FnArg::Receiver(self_) = args[0]
+        && self_.reference.is_some()
+        && self_.mutability.is_some()
+        && let FnArg::Typed(event) = args[1]
+        && let Type::Reference(ref_) = event.ty.as_ref()
+        && ref_.mutability.is_none()
+        && let Type::Path(type_) = ref_.elem.as_ref()
+    {
+        type_.path.get_ident()
+    } else {
+        None
     }
-
-    None
 }
 
 fn get_catch_all(impl_: &ItemImpl) -> Result<Option<&Ident>> {
@@ -280,33 +276,23 @@ fn get_catch_all(impl_: &ItemImpl) -> Result<Option<&Ident>> {
 
             let event_type = Ident::new("Event", Span::call_site());
 
-            if let FnArg::Receiver(self_) = args[0] {
-                if self_.reference.is_some() && self_.mutability.is_some() {
-                    if let FnArg::Typed(event) = args[1] {
-                        if let Type::Reference(ref_) = event.ty.as_ref() {
-                            if ref_.mutability.is_none() {
-                                if let Type::TraitObject(trait_) = ref_.elem.as_ref() {
-                                    if trait_.bounds.len() == 1 {
-                                        if let TypeParamBound::Trait(type_) =
-                                            trait_.bounds.first().unwrap()
-                                        {
-                                            if catch_all.is_none()
-                                                && type_.path.segments.last().unwrap().ident
-                                                    == event_type
-                                            {
-                                                catch_all = Some(&signature.ident);
-                                            } else {
-                                                return Err(Error::new(
-                                                    signature.span(),
-                                                    "only a single catch-all function can be declared with the signature: fn <name>(&mut self, &dyn Event)",
-                                                ));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+            if let FnArg::Receiver(self_) = args[0]
+                && self_.reference.is_some()
+                && self_.mutability.is_some()
+                && let FnArg::Typed(event) = args[1]
+                && let Type::Reference(ref_) = event.ty.as_ref()
+                && ref_.mutability.is_none()
+                && let Type::TraitObject(trait_) = ref_.elem.as_ref()
+                && trait_.bounds.len() == 1
+                && let TypeParamBound::Trait(type_) = trait_.bounds.first().unwrap()
+            {
+                if catch_all.is_none() && type_.path.segments.last().unwrap().ident == event_type {
+                    catch_all = Some(&signature.ident);
+                } else {
+                    return Err(Error::new(
+                        signature.span(),
+                        "only a single catch-all function can be declared with the signature: fn <name>(&mut self, &dyn Event)",
+                    ));
                 }
             }
         }
@@ -350,35 +336,32 @@ fn get_snapshot_function(impl_: &ItemImpl) -> Result<Option<TokenStream>> {
         if let ReturnType::Type(_, ty) = &func.sig.output {
             let name = &func.sig.ident;
 
-            if let Type::Path(ty) = ty.as_ref() {
-                if let Some(segment) = ty.path.segments.last() {
-                    if segment.ident == Ident::new("Option", ty.span()) {
-                        if let PathArguments::AngleBracketed(generics) = &segment.arguments {
-                            if let Some(GenericArgument::Type(Type::Path(arg))) =
-                                generics.args.first()
-                            {
-                                if let Some(segment) = arg.path.segments.last() {
-                                    if segment.ident == Ident::new("Box", ty.span()) {
-                                        // Option<Box<dyn Snapshot>>
-                                        return Ok(Some(quote! { self.#name() }));
-                                    } else {
-                                        // Option<T> where T: Snapshot
-                                        return Ok(Some(quote! {
-                                            self.#name().map(|s| Box::new(s) as Box<dyn cqrs::snapshot::Snapshot>)
-                                        }));
-                                    }
-                                }
-                            }
+            if let Type::Path(ty) = ty.as_ref()
+                && let Some(segment) = ty.path.segments.last()
+            {
+                if segment.ident == Ident::new("Option", ty.span()) {
+                    if let PathArguments::AngleBracketed(generics) = &segment.arguments
+                        && let Some(GenericArgument::Type(Type::Path(arg))) = generics.args.first()
+                        && let Some(segment) = arg.path.segments.last()
+                    {
+                        if segment.ident == Ident::new("Box", ty.span()) {
+                            // Option<Box<dyn Snapshot>>
+                            return Ok(Some(quote! { self.#name() }));
+                        } else {
+                            // Option<T> where T: Snapshot
+                            return Ok(Some(quote! {
+                                self.#name().map(|s| Box::new(s) as Box<dyn cqrs::snapshot::Snapshot>)
+                            }));
                         }
-                    } else if segment.ident == Ident::new("Box", ty.span()) {
-                        // Box<dyn Snapshot>
-                        return Ok(Some(quote! { Some(self.#name()) }));
-                    } else {
-                        // T: Snapshot
-                        return Ok(Some(
-                            quote! { Some(Box::new(self.#name()) as Box<dyn cqrs::snapshot::Snapshot>) },
-                        ));
                     }
+                } else if segment.ident == Ident::new("Box", ty.span()) {
+                    // Box<dyn Snapshot>
+                    return Ok(Some(quote! { Some(self.#name()) }));
+                } else {
+                    // T: Snapshot
+                    return Ok(Some(
+                        quote! { Some(Box::new(self.#name()) as Box<dyn cqrs::snapshot::Snapshot>) },
+                    ));
                 }
             }
 

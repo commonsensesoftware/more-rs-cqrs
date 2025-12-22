@@ -39,7 +39,7 @@ impl<T> Saved<T> {
 
     /// Gets the message [version](Version), if any.
     pub fn version(&self) -> Option<Version> {
-        self.version.clone()
+        self.version
     }
 }
 
@@ -49,8 +49,8 @@ impl<T> From<(T, Option<Version>)> for Saved<T> {
     }
 }
 
-impl<T> Into<(T, Option<Version>)> for Saved<T> {
-    fn into(self) -> (T, Option<Version>) {
-        (self.message, self.version)
+impl<T> From<Saved<T>> for (T, Option<Version>) {
+    fn from(saved: Saved<T>) -> Self {
+        (saved.message, saved.version)
     }
 }

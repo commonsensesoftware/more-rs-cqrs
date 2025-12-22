@@ -6,7 +6,8 @@ const UNDERSCORE: char = '_';
 
 #[inline]
 fn all_allowed(text: &str) -> bool {
-    text.chars().all(|c| c.is_ascii_alphanumeric() || c == UNDERSCORE)
+    text.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == UNDERSCORE)
 }
 
 fn escape(text: &str) -> String {
@@ -93,23 +94,23 @@ impl<'a> Ident<'a> {
         let mut quoted = String::new();
         let full = part.is_none();
 
-        if full || part == Some(IdentPart::Schema) {
-            if let Some(schema) = self.0 {
-                if all_allowed(schema) {
-                    if full {
-                        if self.1.is_empty() {
-                            return Cow::Borrowed(schema);
-                        }
-                    } else {
+        if (full || part == Some(IdentPart::Schema))
+            && let Some(schema) = self.0
+        {
+            if all_allowed(schema) {
+                if full {
+                    if self.1.is_empty() {
                         return Cow::Borrowed(schema);
                     }
+                } else {
+                    return Cow::Borrowed(schema);
                 }
+            }
 
-                if !schema.is_empty() {
-                    quoted.push(DBL_QUOTE);
-                    quoted.push_str(schema);
-                    quoted.push(DBL_QUOTE);
-                }
+            if !schema.is_empty() {
+                quoted.push(DBL_QUOTE);
+                quoted.push_str(schema);
+                quoted.push(DBL_QUOTE);
             }
         }
 

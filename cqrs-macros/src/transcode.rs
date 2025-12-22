@@ -1,7 +1,7 @@
 use parse::{Parse, ParseStream};
 use proc_macro2::{Span, TokenStream};
 use punctuated::Punctuated;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use syn::{spanned::Spanned, *};
 
 pub(crate) struct TranscodeAttribute {
@@ -66,12 +66,12 @@ pub(crate) fn expand(attribute: TranscodeAttribute, input: TokenStream) -> Token
             let event = items
                 .iter()
                 .filter_map(|item| {
-                    if let Item::Struct(struct_) = item {
-                        if struct_.attrs.iter().any(|attr| {
+                    if let Item::Struct(struct_) = item
+                        && struct_.attrs.iter().any(|attr| {
                             attr.path().is_ident("event") || attr.path().is_ident("snapshot")
-                        }) {
-                            return Some(struct_);
-                        }
+                        })
+                    {
+                        return Some(struct_);
                     }
 
                     None
@@ -80,14 +80,13 @@ pub(crate) fn expand(attribute: TranscodeAttribute, input: TokenStream) -> Token
             let snapshot = items
                 .iter()
                 .filter_map(|item| {
-                    if let Item::Struct(struct_) = item {
-                        if struct_
+                    if let Item::Struct(struct_) = item
+                        && struct_
                             .attrs
                             .iter()
                             .any(|attr| attr.path().is_ident("snapshot"))
-                        {
-                            return Some(struct_);
-                        }
+                    {
+                        return Some(struct_);
                     }
 
                     None
