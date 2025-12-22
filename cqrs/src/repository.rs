@@ -146,7 +146,7 @@ where
         let expected_version = changes.expected_version();
         let current_version = self
             .store
-            .save(&id, changes.uncommitted(), expected_version)
+            .save(&id, expected_version, changes.uncommitted())
             .await?;
 
         if let Some(version) = current_version {

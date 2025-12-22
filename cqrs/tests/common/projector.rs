@@ -155,8 +155,8 @@ mod projectors {
         async fn save(
             &self,
             _id: &u64,
-            _events: &[Box<dyn Event>],
             _expected_version: Version,
+            _events: &[Box<dyn Event>],
         ) -> Result<Option<Version>, StoreError<u64>> {
             Ok(None)
         }

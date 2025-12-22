@@ -47,13 +47,13 @@ pub trait Store<T: Debug + Send = Uuid>: Send + Sync {
     /// # Arguments
     ///
     /// * `id` - the identifier of the events to save
-    /// * `events` - the list of [events](Event) to save
     /// * `expected_version` - the current, expected [version](Version)
+    /// * `events` - the list of [events](Event) to save
     async fn save(
         &self,
         id: &T,
-        events: &[Box<dyn Event>],
         expected_version: Version,
+        events: &[Box<dyn Event>],
     ) -> Result<Option<Version>, StoreError<T>>;
 
     /// Deletes a collection of events.

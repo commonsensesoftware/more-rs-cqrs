@@ -164,8 +164,8 @@ where
     async fn save(
         &self,
         id: &ID,
-        events: &[Box<dyn Event>],
         mut expected_version: Version,
+        events: &[Box<dyn Event>],
     ) -> Result<Option<Version>, StoreError<ID>> {
         if events.is_empty() {
             return Ok(None);
