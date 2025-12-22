@@ -1,6 +1,6 @@
 {
     "name": "Rust",
-    "image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
+    "image": "mcr.microsoft.com/devcontainers/rust:1-bullseye",
     "features": {
         "ghcr.io/lee-orr/rusty-dev-containers/cargo-expand": true,
         "ghcr.io/devcontainers/features/docker-in-docker": "latest"
@@ -8,7 +8,10 @@
     "customizations": {
         "vscode": {
             "extensions": [
-                "streetsidesoftware.code-spell-checker"
+                "rust-lang.rust-analyzer",
+                "streetsidesoftware.code-spell-checker",
+                "vadimcn.vscode-lldb",
+                "tamasfe.even-better-toml"
             ],
             "settings": {
                 "editor.formatOnSave": true,
@@ -18,5 +21,5 @@
     },
     // unclear why this is necessary, but some combination of configuration
     // and features results in the folder being write protected otherwise
-    "postCreateCommand": "sudo chown -R vscode:vscode $CARGO_HOME"
+    "postCreateCommand": "rustup update && sudo chown -R vscode:vscode $CARGO_HOME"
 }
