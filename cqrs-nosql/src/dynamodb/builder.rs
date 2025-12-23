@@ -68,7 +68,7 @@ impl<ID, M: Message + ?Sized> Builder<ID, M> {
     ///
     /// # Remarks
     ///
-    /// Providing a configuration has no effect if a [`Self::client`] is specified.
+    /// Providing a configuration has no effect if a [Self::client] is specified.
     pub fn config(mut self, value: SdkConfig) -> Self {
         self.config = Some(value);
         self
@@ -82,7 +82,7 @@ impl<ID, M: Message + ?Sized> Builder<ID, M> {
     ///
     /// # Remarks
     ///
-    /// Specifying a [`Client`] is useful when it has already been configured externally or it is being
+    /// Specifying a [Client] is useful when it has already been configured externally or it is being
     /// reused across configurations. This configuration supersedes any previous [configuration](Self::config).
     pub fn client<V: Into<Client>>(mut self, value: V) -> Self {
         self.client = Some(value.into());

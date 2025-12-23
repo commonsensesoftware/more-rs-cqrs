@@ -18,7 +18,7 @@ pub struct StoreMigrator {
 }
 
 impl StoreMigrator {
-    /// Initializes a new [`StoreMigrator`].
+    /// Initializes a new [StoreMigrator].
     pub fn new() -> Self {
         Self::default()
     }

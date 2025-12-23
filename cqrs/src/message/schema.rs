@@ -11,7 +11,7 @@ pub struct Schema {
 }
 
 impl Schema {
-    /// Initializes a new [`Schema`].
+    /// Initializes a new [Schema].
     ///
     /// # Arguments
     ///
@@ -24,7 +24,7 @@ impl Schema {
         }
     }
 
-    /// Initializes a new [`Schema`].
+    /// Initializes a new [Schema].
     ///
     /// # Arguments
     ///
@@ -32,13 +32,13 @@ impl Schema {
     ///
     /// # Remarks
     ///
-    /// The initial [`Self::version`] is `1`.
+    /// The initial [Self::version] is `1`.
     #[inline]
     pub fn initial<K: AsRef<str>>(kind: K) -> Self {
         Self::new(kind, 1)
     }
 
-    /// Initializes a new [`Schema`].
+    /// Initializes a new [Schema].
     ///
     /// # Arguments
     ///

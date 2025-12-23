@@ -12,7 +12,7 @@ pub struct Filter<'a, T: Debug + Send = Uuid> {
 }
 
 impl<'a, T: Debug + Send> Filter<'a, T> {
-    /// Initializes a new [`Filter`].
+    /// Initializes a new [Filter].
     ///
     /// # Arguments
     ///
@@ -35,12 +35,12 @@ impl<'a, T: Debug + Send> Filter<'a, T> {
     }
 }
 
-/// Represents a builder to create a [`Filter`].
+/// Represents a builder to create a [Filter].
 #[derive(Default)]
 pub struct FilterBuilder<'a, T: Debug + Send = Uuid>(Filter<'a, T>);
 
 impl<'a, T: Debug + Send> FilterBuilder<'a, T> {
-    /// Initializes a new [`FilterBuilder`].
+    /// Initializes a new [FilterBuilder].
     ///
     /// # Arguments
     ///
@@ -59,7 +59,7 @@ impl<'a, T: Debug + Send> FilterBuilder<'a, T> {
         self
     }
 
-    /// Builds and returns a new [`Filter`].
+    /// Builds and returns a new [Filter].
     pub fn build(self) -> Filter<'a, T> {
         self.0
     }

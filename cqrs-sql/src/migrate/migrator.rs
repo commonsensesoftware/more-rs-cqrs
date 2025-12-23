@@ -34,7 +34,7 @@ where
     DB: Database,
     DB::Connection: Migrate,
 {
-    /// Initializes new [`SqlStoreMigrator`]
+    /// Initializes new [SqlStoreMigrator]
     pub fn new() -> Self {
         Self::default()
     }

@@ -57,7 +57,7 @@ pub struct ChangeSet<'a> {
 }
 
 impl<'a> ChangeSet<'a> {
-    /// Initializes a new [`ChangeSet`].
+    /// Initializes a new [ChangeSet].
     ///
     /// # Arguments
     ///

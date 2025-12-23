@@ -41,7 +41,7 @@ pub enum EncodingError {
     #[error("type {} for revision {} has not been registered", (.0).kind(), (.0).version())]
     Unregistered(Schema),
 
-    /// Indicates that an [encoding](Encoding) failed to [`Encoding::encode`] or [`Encoding::decode`].
+    /// Indicates that an [encoding](Encoding) failed to [Encoding::encode] or [Encoding::decode].
     #[error(transparent)]
     Failed(#[from] Box<dyn Error + Send>),
 }

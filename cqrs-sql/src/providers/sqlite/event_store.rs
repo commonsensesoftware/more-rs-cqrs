@@ -30,7 +30,7 @@ pub struct EventStore<ID> {
 }
 
 impl<ID> EventStore<ID> {
-    /// Initializes a new [`EventStore`].
+    /// Initializes a new [EventStore].
     ///
     /// # Arguments
     ///
@@ -60,7 +60,7 @@ impl<ID> EventStore<ID> {
         }
     }
 
-    /// Creates and returns a new [`SqlStoreBuilder`].
+    /// Creates and returns a new [SqlStoreBuilder].
     pub fn builder() -> SqlStoreBuilder<ID, dyn Event, Sqlite> {
         SqlStoreBuilder::default()
     }

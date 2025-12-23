@@ -16,7 +16,7 @@ pub trait Clock: Debug + Send + Sync {
 pub struct WallClock;
 
 impl WallClock {
-    /// Initializes a new [`WallClock`].
+    /// Initializes a new [WallClock].
     pub fn new() -> Self {
         Self
     }
@@ -33,7 +33,7 @@ impl Clock for WallClock {
 pub struct VirtualClock(Arc<RwLock<Arc<dyn Fn() -> SystemTime + Send + Sync>>>);
 
 impl VirtualClock {
-    /// Initializes a new [`VirtualClock`].
+    /// Initializes a new [VirtualClock].
     pub fn new() -> Self {
         Self::default()
     }

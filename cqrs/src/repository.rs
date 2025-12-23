@@ -82,7 +82,7 @@ where
     A: Aggregate + Default + Sync,
     A::ID: Clone + Debug + Send + Sync + 'static,
 {
-    /// Initializes a new [`Repository`].
+    /// Initializes a new [Repository].
     ///
     /// # Arguments
     ///
@@ -169,8 +169,8 @@ where
     /// events have been copied to different, cheaper, colder, but long-live [store](Store).
     ///
     /// A [store](Store) is not required to support deletes and the assumed expectation should be that a
-    /// [store](Store) does not support deletes. If a [store](Store) returns [`StoreError::Unsupported`],
-    /// it will bubble up as [`RepositoryError::Unsupported`].
+    /// [store](Store) does not support deletes. If a [store](Store) returns [StoreError::Unsupported],
+    /// it will bubble up as [RepositoryError::Unsupported].
     pub async fn delete(&self, id: &A::ID) -> Result<(), RepositoryError<A::ID>> {
         Ok(self.store.delete(id).await?)
     }

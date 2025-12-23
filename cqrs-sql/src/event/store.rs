@@ -30,7 +30,7 @@ pub struct SqlStore<ID, DB: Database> {
 }
 
 impl<ID, DB: Database> SqlStore<ID, DB> {
-    /// Initializes a new [`SqlStore`].
+    /// Initializes a new [SqlStore].
     ///
     /// # Arguments
     ///
@@ -60,7 +60,7 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
         }
     }
 
-    /// Creates and returns a new [`SqlStoreBuilder`].
+    /// Creates and returns a new [SqlStoreBuilder].
     pub fn builder() -> SqlStoreBuilder<ID, dyn Event, DB> {
         SqlStoreBuilder::default()
     }

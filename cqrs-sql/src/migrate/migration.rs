@@ -33,7 +33,7 @@ where
     DB: Database,
     DB::Connection: Migrate,
 {
-    /// Initializes a new [`SqlStoreMigration`].
+    /// Initializes a new [SqlStoreMigration].
     ///
     ///  # Argument
     ///
@@ -52,7 +52,7 @@ where
         }
     }
 
-    /// Initializes a new [`SqlStoreMigration`].
+    /// Initializes a new [SqlStoreMigration].
     ///
     ///  # Argument
     ///

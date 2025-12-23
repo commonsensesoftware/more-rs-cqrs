@@ -66,7 +66,7 @@ impl SecureMask {
     ///
     /// # Returns
     ///
-    /// The new [`SecureMask`] or [`InvalidLength`] if the key is not
+    /// The new [SecureMask] or [InvalidLength] if the key is not
     /// between 1 and 128 bytes.
     pub fn new<K: AsRef<[u8]>>(key: K) -> Result<Self, InvalidLength> {
         let key = key.as_ref();
@@ -78,7 +78,7 @@ impl SecureMask {
         }
     }
 
-    /// Initializes a new [`SecureMask`] without checking the key size.
+    /// Initializes a new [SecureMask] without checking the key size.
     ///
     /// # Arguments
     ///
@@ -100,7 +100,7 @@ impl SecureMask {
         key
     }
 
-    /// Initializes a new [`SecureMask`] using an ephemeral key.
+    /// Initializes a new [SecureMask] using an ephemeral key.
     #[inline]
     pub fn ephemeral() -> Self {
         Self::new_unchecked(Self::new_key())

@@ -24,7 +24,7 @@ pub struct SnapshotStore<T> {
 }
 
 impl<T> SnapshotStore<T> {
-    /// Initializes a new [`SnapshotStore`].
+    /// Initializes a new [SnapshotStore].
     ///
     /// # Arguments
     ///
@@ -50,7 +50,7 @@ impl<T> SnapshotStore<T> {
         }
     }
 
-    /// Creates and returns a new [`Builder`].
+    /// Creates and returns a new [Builder].
     pub fn builder() -> Builder<T, dyn Snapshot> {
         Builder::default()
     }

@@ -24,7 +24,7 @@ pub struct SnapshotStore<ID> {
 }
 
 impl<ID> SnapshotStore<ID> {
-    /// Initializes a new [`SnapshotStore`].
+    /// Initializes a new [SnapshotStore].
     ///
     /// # Arguments
     ///
@@ -50,7 +50,7 @@ impl<ID> SnapshotStore<ID> {
         }
     }
 
-    /// Creates and returns a new [`SqlStoreBuilder`].
+    /// Creates and returns a new [SqlStoreBuilder].
     pub fn builder() -> SqlStoreBuilder<ID, dyn Snapshot, Sqlite> {
         SqlStoreBuilder::default()
     }

@@ -77,7 +77,7 @@ fn clone<T: Clone>(bound: Bound<&T>) -> Bound<T> {
 }
 
 impl<T: Clone> Range<T> {
-    /// Initializes a new [`Range`].
+    /// Initializes a new [Range].
     ///
     /// # Arguments
     ///
@@ -91,12 +91,12 @@ impl<T: Clone> Range<T> {
 }
 
 impl<T> Range<T> {
-    /// Initializes a new, unbounded [`Range`].
+    /// Initializes a new, unbounded [Range].
     pub fn all() -> Self {
         Self::default()
     }
 
-    /// Initializes a new [`Range`] between two values.
+    /// Initializes a new [Range] between two values.
     ///
     /// # Arguments
     ///
@@ -109,7 +109,7 @@ impl<T> Range<T> {
         }
     }
 
-    /// Initializes a new [`Range`] from an inclusive value.
+    /// Initializes a new [Range] from an inclusive value.
     ///
     /// # Arguments
     ///
@@ -121,7 +121,7 @@ impl<T> Range<T> {
         }
     }
 
-    /// Initializes a new [`Range`] from an exclusive value.
+    /// Initializes a new [Range] from an exclusive value.
     ///
     /// # Arguments
     ///
@@ -133,7 +133,7 @@ impl<T> Range<T> {
         }
     }
 
-    /// Initializes a new [`Range`] up to an inclusive value.
+    /// Initializes a new [Range] up to an inclusive value.
     ///
     /// # Arguments
     ///
@@ -145,7 +145,7 @@ impl<T> Range<T> {
         }
     }
 
-    /// Initializes a new [`Range`] up to an exclusive value.
+    /// Initializes a new [Range] up to an exclusive value.
     ///
     /// # Arguments
     ///

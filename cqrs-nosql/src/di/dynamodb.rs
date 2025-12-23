@@ -52,7 +52,7 @@ where
     A: Aggregate + Default + Sync + 'static,
     A::ID: Clone + Default + FromStr + Sync + ToString,
 {
-    /// Initializes a new [`SqliteStoreBuilder`].
+    /// Initializes a new [SqliteStoreBuilder].
     ///
     /// # Arguments
     ///
@@ -172,7 +172,7 @@ where
     ///
     /// # Remarks
     ///
-    /// Providing a configuration has no effect if a [`Self::client`] is specified.
+    /// Providing a configuration has no effect if a [Self::client] is specified.
     pub fn config(mut self, value: SdkConfig) -> Self {
         self.config = Some(value);
         self
@@ -186,11 +186,11 @@ where
     ///
     /// # Remarks
     ///
-    /// Specifying a [`Client`] is useful when it has already been configured externally or it is being
+    /// Specifying a [Client] is useful when it has already been configured externally or it is being
     /// reused across configurations. This configuration supersedes any previous [configuration](Self::config).
     ///
-    /// A [`Client`] may be configured via [`OptionsSnapshot`] using the configured [`Self::table`],
-    /// which allows specifying [`Option`] of [`Client`] for all or a specific [aggregates](Aggregate).
+    /// A [Client] may be configured via [OptionsSnapshot] using the configured [Self::table],
+    /// which allows specifying [Option] of [Client] for all or a specific [aggregates](Aggregate).
     /// If a client is explicitly configured by this function, it supersedes any other configuration.
     pub fn client<V: Into<Client>>(mut self, value: V) -> Self {
         self.client = Some(value.into());
@@ -218,7 +218,7 @@ where
     /// # Remarks
     ///
     /// In order to use a snapshot store which does not use Amazon DynamoDB, a keyed service must be registered in
-    /// the [`ServiceCollection`] for a [`cqrs::snapshot::Store`] using the type of [`Aggregate`] as the key.
+    /// the [ServiceCollection] for a [cqrs::snapshot::Store] using the type of [Aggregate] as the key.
     #[inline]
     pub fn snapshots(mut self) -> Self {
         let table = self.parent.table;

@@ -147,7 +147,7 @@ impl<'a> Ident<'a> {
     /// # Remarks
     ///
     /// Returns part of the identifier as an object name for use in prefixes and suffixes of other database
-    /// objects, such as indexes. The [`IdentPart::Object`] `"my-events"` is returned as `my_events`.
+    /// objects, such as indexes. The [IdentPart::Object] `"my-events"` is returned as `my_events`.
     #[inline]
     pub fn part_as_object_name(&self, part: IdentPart) -> Cow<'a, str> {
         self._as_object_name(Some(part))

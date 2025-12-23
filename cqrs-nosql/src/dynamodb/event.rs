@@ -142,7 +142,7 @@ pub struct EventStore<T> {
 }
 
 impl<T> EventStore<T> {
-    /// Initializes a new [`EventStore`].
+    /// Initializes a new [EventStore].
     ///
     /// # Arguments
     ///
@@ -172,7 +172,7 @@ impl<T> EventStore<T> {
         }
     }
 
-    /// Creates and returns a new [`Builder`].
+    /// Creates and returns a new [Builder].
     pub fn builder() -> Builder<T, dyn Event> {
         Builder::default()
     }

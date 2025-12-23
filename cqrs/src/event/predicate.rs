@@ -44,7 +44,7 @@ pub struct Predicate<'a, T: Debug + Send = Uuid> {
 }
 
 impl<'a, T: Debug + Send> Predicate<'a, T> {
-    /// Initializes a new [`Predicate`].
+    /// Initializes a new [Predicate].
     ///
     /// # Arguments
     ///
@@ -66,12 +66,12 @@ impl<'a, T: Debug + Send> Default for Predicate<'a, T> {
     }
 }
 
-/// Represents a builder to create a [`Predicate`].
+/// Represents a builder to create a [Predicate].
 #[derive(Default)]
 pub struct PredicateBuilder<'a, T: Debug + Send = Uuid>(Predicate<'a, T>);
 
 impl<'a, T: Debug + Send> PredicateBuilder<'a, T> {
-    /// Initializes a new [`PredicateBuilder`].
+    /// Initializes a new [PredicateBuilder].
     ///
     /// # Arguments
     ///
@@ -98,7 +98,7 @@ impl<'a, T: Debug + Send> PredicateBuilder<'a, T> {
     ///
     /// # Remarks
     ///
-    /// Use [`Schema::versionless`] to match any version of a [schema](Schema).
+    /// Use [Schema::versionless] to match any version of a [schema](Schema).
     pub fn add_type(mut self, value: Schema) -> Self {
         self.0.types.push(value);
         self
@@ -149,7 +149,7 @@ impl<'a, T: Debug + Send> PredicateBuilder<'a, T> {
         self
     }
 
-    /// Builds and returns a new [`Predicate`].
+    /// Builds and returns a new [Predicate].
     pub fn build(self) -> Predicate<'a, T> {
         self.0
     }

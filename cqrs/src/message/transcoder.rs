@@ -15,7 +15,7 @@ impl<T: ?Sized + Sync> Default for Transcoder<T> {
 }
 
 impl<T: ?Sized + Sync> Transcoder<T> {
-    /// Initializes a new [`Transcoder`].
+    /// Initializes a new [Transcoder].
     pub fn new() -> Self {
         Self::default()
     }
@@ -50,7 +50,7 @@ impl<T: ?Sized + Message> Transcoder<T> {
     ///
     /// # Returns
     ///
-    /// The decoded [`Message`] is successful; otherwise an [error](EncodingError).
+    /// The decoded [Message] is successful; otherwise an [error](EncodingError).
     pub fn decode(&self, schema: &Schema, message: &[u8]) -> Result<Box<T>, EncodingError> {
         if let Some(encoding) = self.encodings.get(schema) {
             Ok(encoding.decode(message)?)

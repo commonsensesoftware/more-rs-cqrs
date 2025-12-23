@@ -53,7 +53,7 @@ where
     A::ID:
         Clone + for<'db> Encode<'db, Sqlite> + for<'db> Decode<'db, Sqlite> + Sync + Type<Sqlite>,
 {
-    /// Initializes a new [`SqliteStoreBuilder`].
+    /// Initializes a new [SqliteStoreBuilder].
     ///
     /// # Arguments
     ///
@@ -178,8 +178,8 @@ where
     /// # Remarks
     ///
     /// If a URL is not specified, the underlying configuration will attempt to use
-    /// the value configured by [`SqlOptions::url`] via [`OptionsSnapshot`] using
-    /// the configured [`Self::table`], which allows specifying [`SqlOptions`] for
+    /// the value configured by [SqlOptions::url] via [OptionsSnapshot] using
+    /// the configured [Self::table], which allows specifying [SqlOptions] for
     /// all or specific [aggregates](Aggregate). A URL specified by this function
     /// supersedes any other configuration.
     pub fn url<V: AsRef<str>>(mut self, value: V) -> Self {
@@ -218,7 +218,7 @@ where
     /// # Remarks
     ///
     /// In order to use a snapshot store which does not use SQL, a keyed service must be registered in the
-    /// [`ServiceCollection`] for a [`cqrs::snapshot::Store`] using the type of [`Aggregate`] as the key.
+    /// [ServiceCollection] for a [cqrs::snapshot::Store] using the type of [Aggregate] as the key.
     #[inline]
     pub fn snapshots(mut self) -> Self {
         let name = self.parent.name;

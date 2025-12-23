@@ -29,7 +29,7 @@ impl fmt::Display for Version {
 }
 
 impl Version {
-    /// Initializes a new [`Version`].
+    /// Initializes a new [Version].
     ///
     /// # Arguments
     ///

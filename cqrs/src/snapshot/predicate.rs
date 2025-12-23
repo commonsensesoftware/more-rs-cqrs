@@ -29,12 +29,12 @@ impl Default for Predicate {
     }
 }
 
-/// Represents a builder to create a [`Predicate`].
+/// Represents a builder to create a [Predicate].
 #[derive(Default)]
 pub struct PredicateBuilder(Predicate);
 
 impl PredicateBuilder {
-    /// Initializes a new [`PredicateBuilder`].
+    /// Initializes a new [PredicateBuilder].
     pub fn new() -> Self {
         Self::default()
     }
@@ -60,7 +60,7 @@ impl PredicateBuilder {
         self
     }
 
-    /// Builds and returns a new [`Predicate`].
+    /// Builds and returns a new [Predicate].
     pub fn build(self) -> Predicate {
         self.0
     }

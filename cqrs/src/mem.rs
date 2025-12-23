@@ -72,7 +72,7 @@ pub struct SnapshotStore<T = Uuid> {
 }
 
 impl<T> SnapshotStore<T> {
-    /// Initializes a new in-memory [`SnapshotStore`].
+    /// Initializes a new in-memory [SnapshotStore].
     ///
     /// # Arguments
     ///
@@ -180,7 +180,7 @@ pub struct EventStore<T = Uuid> {
 }
 
 impl<T> EventStore<T> {
-    /// Initializes a new in-memory [`EventStore`].
+    /// Initializes a new in-memory [EventStore].
     ///
     /// # Arguments
     ///
@@ -211,7 +211,7 @@ impl<T> EventStore<T> {
 }
 
 impl<T: Clone + Debug + Eq + Hash + Send + Sync> EventStore<T> {
-    /// Initializes a new in-memory [`EventStore`] with support for [snapshots](Snapshot).
+    /// Initializes a new in-memory [EventStore] with support for [snapshots](Snapshot).
     ///
     /// # Arguments
     ///

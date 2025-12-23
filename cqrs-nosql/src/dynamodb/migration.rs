@@ -13,7 +13,7 @@ pub struct EventStoreMigration {
 }
 
 impl EventStoreMigration {
-    /// Initializes a new [`EventStoreMigration`].
+    /// Initializes a new [EventStoreMigration].
     /// 
     /// # Arguments
     /// 
@@ -75,7 +75,7 @@ pub struct SnapshotStoreMigration {
 }
 
 impl SnapshotStoreMigration {
-    /// Initializes a new [`EventStoreMigration`].
+    /// Initializes a new [EventStoreMigration].
     /// 
     /// # Arguments
     /// 

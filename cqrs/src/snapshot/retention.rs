@@ -11,7 +11,7 @@ pub struct Retention {
 }
 
 impl Retention {
-    /// Initializes a new [`Retention`] that retains a fixed number of snapshots.
+    /// Initializes a new [Retention] that retains a fixed number of snapshots.
     ///
     /// # Arguments
     ///
@@ -23,7 +23,7 @@ impl Retention {
         }
     }
 
-    /// Initializes a new [`Retention`] that retains a fixed age of snapshots.
+    /// Initializes a new [Retention] that retains a fixed age of snapshots.
     ///
     /// # Arguments
     ///
@@ -35,7 +35,7 @@ impl Retention {
         }
     }
 
-    /// Initializes a new [`Retention`] that retains snapshots for a fixed number of days.
+    /// Initializes a new [Retention] that retains snapshots for a fixed number of days.
     ///
     /// # Arguments
     ///

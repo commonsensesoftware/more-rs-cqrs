@@ -14,7 +14,7 @@ pub struct Descriptor {
 }
 
 impl Descriptor {
-    /// Initializes a new [`Descriptor`].
+    /// Initializes a new [Descriptor].
     pub fn new(
         schema: Schema,
         version: Version,
