@@ -6,7 +6,7 @@ use crate::{
 use async_stream::try_stream;
 use async_trait::async_trait;
 use cqrs::{
-    Clock, Mask, Range, Version,
+    Clock, Concurrency, Mask, Range, Version,
     event::{Delete, Event, EventStream, IdStream, Predicate, Store, StoreError},
     message::{Saved, Schema, Transcoder},
     snapshot,
@@ -17,6 +17,76 @@ use sqlx::{
     Type,
 };
 use std::{error::Error, fmt::Debug, ops::Bound, sync::Arc, time::SystemTime};
+
+/// Represents a SQL [event store](Store) options.
+pub struct SqlStoreOptions<ID> {
+    concurrency: Concurrency,
+    delete: Delete,
+    mask: Option<Arc<dyn Mask>>,
+    clock: Arc<dyn Clock>,
+    transcoder: Arc<Transcoder<dyn Event>>,
+    snapshots: Option<Arc<dyn snapshot::Store<ID>>>,
+}
+
+impl<ID> SqlStoreOptions<ID> {
+    /// Initializes a new [SqlStoreOptions].
+    ///
+    /// # Arguments
+    ///
+    /// * `concurrency` - indicates the [concurrency](Concurrency) behavior
+    /// * `delete` - indicates whether [deletes](Delete) are supported
+    /// * `mask` - the optional [mask](Mask) used to obfuscate [versions](Version)
+    /// * `clock` - the associated [clock](Clock)
+    /// * `transcoder` - the associated [transcoder](Transcoder)
+    /// * `snapshots` - the associated [snapshot store](snapshot::Store)
+    pub fn new(
+        concurrency: Concurrency,
+        delete: Delete,
+        mask: Option<Arc<dyn Mask>>,
+        clock: Arc<dyn Clock>,
+        transcoder: Arc<Transcoder<dyn Event>>,
+        snapshots: Option<Arc<dyn snapshot::Store<ID>>>,
+    ) -> Self {
+        Self {
+            concurrency,
+            delete,
+            mask,
+            clock,
+            transcoder,
+            snapshots,
+        }
+    }
+
+    /// Gets the configured store [concurrency](Concurrency) option.
+    pub fn concurrency(&self) -> Concurrency {
+        self.concurrency
+    }
+
+    /// Gets the configured store [deletion](Delete) option.
+    pub fn delete(&self) -> Delete {
+        self.delete
+    }
+
+    /// Gets the configured [mask](Mask), if any.
+    pub fn mask(&self) -> Option<&dyn Mask> {
+        self.mask.as_deref()
+    }
+
+    /// Gets the configured [clock](Clock).
+    pub fn clock(&self) -> &dyn Clock {
+        &*self.clock
+    }
+
+    /// Gets the configured [transcoder](Transcoder).
+    pub fn transcoder(&self) -> &Transcoder<dyn Event> {
+        &self.transcoder
+    }
+
+    /// Gets the configured [snapshot store](snapshot::Store), if any.
+    pub fn snapshots(&self) -> Option<&dyn snapshot::Store<ID>> {
+        self.snapshots.as_deref()
+    }
+}
 
 /// Represents a SQL [event store](Store).
 pub struct SqlStore<ID, DB: Database> {

@@ -1,5 +1,6 @@
 mod aggregate;
 mod clock;
+mod concurrency;
 mod mask;
 mod migration;
 mod range;
@@ -8,6 +9,7 @@ mod version;
 
 pub use aggregate::{Aggregate, ChangeSet, EventHistory};
 pub use clock::{Clock, ClockHolder, VirtualClock, WallClock};
+pub use concurrency::Concurrency;
 pub use mask::{Mask, SecureMask};
 pub use migration::{StoreMigration, StoreMigrator};
 pub use range::Range;
