@@ -1,8 +1,8 @@
 use serde::{
-    de::{self, MapAccess, Visitor},
     Deserialize, Deserializer,
+    de::{self, MapAccess, Visitor},
 };
-use sqlx::{pool::PoolOptions, Database};
+use sqlx::{Database, pool::PoolOptions};
 use std::{
     fmt::{Formatter, Result as FormatResult},
     time::Duration,

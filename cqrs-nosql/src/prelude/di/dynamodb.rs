@@ -4,9 +4,9 @@ use aws_sdk_dynamodb::Client;
 use cfg_if::cfg_if;
 use cqrs::{
     Aggregate, Clock, Mask, Repository,
-    di::AggregateBuilder,
     event::{self, Event},
     message::Transcoder,
+    prelude::AggregateBuilder,
     snapshot::{self, Snapshot},
 };
 use di::{

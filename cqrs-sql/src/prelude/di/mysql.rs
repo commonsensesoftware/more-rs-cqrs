@@ -1,5 +1,5 @@
 use super::SqlStoreBuilder;
-use cqrs::{Aggregate, di::AggregateBuilder};
+use cqrs::{Aggregate, prelude::AggregateBuilder};
 use sqlx::{ColumnIndex, Database, Decode, Encode, MySql, Type};
 
 /// Represents the MySql storage configuration extensions.

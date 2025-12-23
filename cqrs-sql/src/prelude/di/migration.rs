@@ -1,15 +1,14 @@
-use super::{merge, DynSnapshotStore, SqlOptions, SqlStoreOptionsBuilder};
+use super::{DynSnapshotStore, SqlOptions, SqlStoreOptionsBuilder, merge};
 use crate::{
-    event,
+    SqlStoreMigration, SqlStoreMigrator, event,
     snapshot::{self, Upsert},
-    SqlStoreMigration, SqlStoreMigrator,
 };
-use cqrs::{event::Event, message::Transcoder, Aggregate, Clock};
-use di::{exactly_one, transient_as_self, zero_or_one, zero_or_one_with_key, Injectable, Ref};
+use cqrs::{Aggregate, Clock, event::Event, message::Transcoder};
+use di::{Injectable, Ref, exactly_one, transient_as_self, zero_or_one, zero_or_one_with_key};
 use options::OptionsSnapshot;
 use sqlx::{
-    migrate::{Migrate, Migration},
     ColumnIndex, Database, Decode, Encode, Executor, FromRow, IntoArguments, Type,
+    migrate::{Migrate, Migration},
 };
 
 /// Represents the configuration for SQL storage migration.

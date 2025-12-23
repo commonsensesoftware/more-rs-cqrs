@@ -9,6 +9,7 @@ use cqrs::{
     Aggregate, Repository, VirtualClock,
     event::{self, Store},
     in_memory::{EventStore, SnapshotStore},
+    prelude::*,
     snapshot,
 };
 use std::sync::Arc;
@@ -132,7 +133,7 @@ async fn account_should_replay_all_history_with_snapshot_from_projector() -> Tes
 fn di_should_register_expected_descriptors_after_drop() {
     // arrange
     use common::domain::transcoder::{events, snapshots};
-    use cqrs::di::*;
+
     let mut services = di::ServiceCollection::new();
 
     // act
@@ -150,7 +151,6 @@ fn di_should_register_expected_descriptors_after_drop() {
 async fn account_should_replay_all_history_with_snapshot_using_di() -> TestResult {
     // arrange
     use common::domain::transcoder::{events, snapshots};
-    use cqrs::di::*;
 
     let provider = di::ServiceCollection::new()
         .add_cqrs(|options| {

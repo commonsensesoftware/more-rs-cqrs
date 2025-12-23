@@ -18,6 +18,9 @@ pub use version::{SqlVersion, SqlVersionDisplay, SqlVersionPart};
 #[cfg(any(feature = "mysql", feature = "postgres", feature = "sqlite"))]
 mod providers;
 
+/// Contains library prelude.
+pub mod prelude;
+
 #[cfg(feature = "mysql")]
 /// Provides storage using MySQL.
 pub use providers::mysql;
@@ -40,13 +43,6 @@ cfg_if! {
     if #[cfg(feature = "migrate")] {
         mod migrate;
         pub use migrate::{SqlStoreMigrator, SqlStoreMigration};
-    }
-}
-
-cfg_if! {
-    if #[cfg(feature = "di")] {
-        mod di;
-        pub use di::*;
     }
 }
 

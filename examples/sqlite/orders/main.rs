@@ -4,8 +4,8 @@ mod events;
 mod item;
 mod order;
 
-use cqrs::{Clock, Repository, RepositoryError, SecureMask, StoreMigrator, di::CqrsExt};
-use cqrs_sql::SqliteExt;
+use cqrs::{Clock, Repository, RepositoryError, SecureMask, StoreMigrator, prelude::*};
+use cqrs_sql::prelude::*;
 use di::ServiceCollection;
 use events::transcoder::events;
 use item::Item;

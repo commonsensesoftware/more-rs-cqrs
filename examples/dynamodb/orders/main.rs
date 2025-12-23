@@ -6,8 +6,8 @@ mod order;
 
 use aws_config::{BehaviorVersion, meta::region::RegionProviderChain};
 use aws_sdk_dynamodb::config::Credentials;
-use cqrs::{Clock, Repository, RepositoryError, SecureMask, StoreMigrator, di::CqrsExt};
-use cqrs_nosql::DynamoDbExt;
+use cqrs::{Clock, Repository, RepositoryError, SecureMask, StoreMigrator, prelude::*};
+use cqrs_nosql::prelude::*;
 use di::ServiceCollection;
 use events::transcoder::events;
 use item::Item;

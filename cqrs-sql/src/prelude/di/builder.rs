@@ -1,20 +1,20 @@
-use super::{merge, DynEventStore, DynSnapshotStore, SqlOptions};
+use super::{DynEventStore, DynSnapshotStore, SqlOptions, merge};
 use crate::{
     event,
     snapshot::{self, Prune, Upsert},
 };
 use cfg_if::cfg_if;
 use cqrs::{
-    event::Event, message::Transcoder, snapshot::Snapshot, Aggregate, Clock, Mask, Repository,
+    Aggregate, Clock, Mask, Repository, event::Event, message::Transcoder, snapshot::Snapshot,
 };
 use di::{
-    exactly_one, exactly_one_with_key, singleton_as_self, singleton_with_key, zero_or_one,
-    zero_or_one_with_key, Ref, ServiceCollection,
+    Ref, ServiceCollection, exactly_one, exactly_one_with_key, singleton_as_self,
+    singleton_with_key, zero_or_one, zero_or_one_with_key,
 };
 use options::OptionsSnapshot;
 use sqlx::{
-    pool::PoolOptions, ColumnIndex, Database, Decode, Encode, Executor, FromRow, IntoArguments,
-    Type,
+    ColumnIndex, Database, Decode, Encode, Executor, FromRow, IntoArguments, Type,
+    pool::PoolOptions,
 };
 use std::{any::type_name, marker::PhantomData, sync::Arc};
 

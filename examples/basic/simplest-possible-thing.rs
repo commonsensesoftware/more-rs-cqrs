@@ -1,9 +1,4 @@
-use cqrs::{
-    Aggregate, Repository, aggregate,
-    di::{CqrsExt, InMemoryExt},
-    encoding::Uuid,
-    event, transcode, when,
-};
+use cqrs::{Aggregate, Repository, aggregate, encoding::Uuid, event, prelude::*, transcode, when};
 use di::ServiceCollection;
 use prost::Message;
 use std::error::Error;

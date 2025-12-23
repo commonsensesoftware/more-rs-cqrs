@@ -30,6 +30,9 @@ pub mod event;
 /// Contains support the foundational support for messages.
 pub mod message;
 
+/// Contains library prelude.
+pub mod prelude;
+
 /// Contains support for data projections.
 pub mod projection;
 
@@ -53,12 +56,5 @@ cfg_if! {
             use super::*;
             pub use mem::{EventStore, SnapshotStore};
         }
-    }
-}
-
-cfg_if! {
-    if #[cfg(feature = "di")] {
-        /// Provides Dependency Injection (DI) extensions.
-        pub mod di;
     }
 }

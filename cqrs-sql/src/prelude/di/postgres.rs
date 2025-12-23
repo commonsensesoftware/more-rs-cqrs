@@ -1,5 +1,5 @@
 use super::SqlStoreBuilder;
-use cqrs::{Aggregate, di::AggregateBuilder};
+use cqrs::{Aggregate, prelude::AggregateBuilder};
 use sqlx::{ColumnIndex, Database, Decode, Encode, Postgres, Type};
 
 /// Represents the Postgres storage configuration extensions.

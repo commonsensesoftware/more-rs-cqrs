@@ -2,12 +2,13 @@ mod common;
 
 use common::{
     TestResult,
-    domain::{self, Account},
+    domain::{Account, transcoder::events},
 };
 use cqrs::{
     Repository, RepositoryError, VirtualClock,
     event::{Store, StoreOptions},
     in_memory::EventStore,
+    prelude::*,
 };
 use std::sync::Arc;
 
@@ -16,7 +17,7 @@ async fn repository_should_save_aggregate() -> TestResult<RepositoryError<String
     // arrange
     let options = StoreOptions::builder()
         .clock(VirtualClock::new())
-        .transcoder(domain::transcoder::events())
+        .transcoder(events())
         .build();
     let store = Arc::new(EventStore::<String>::new(options));
     let repository: Repository<Account> = (store.clone() as Arc<dyn Store<String>>).into();
@@ -40,7 +41,7 @@ async fn repository_should_get_aggregate_by_id() -> TestResult<RepositoryError<S
     // arrange
     let options = StoreOptions::builder()
         .clock(VirtualClock::new())
-        .transcoder(domain::transcoder::events())
+        .transcoder(events())
         .build();
     let store = EventStore::<String>::new(options);
     let repository = Repository::new(store);
@@ -64,9 +65,6 @@ async fn repository_should_get_aggregate_by_id() -> TestResult<RepositoryError<S
 #[tokio::test]
 async fn repository_should_get_aggregate_by_id_using_di() -> TestResult<RepositoryError<String>> {
     // arrange
-    use common::domain::transcoder::events;
-    use cqrs::di::*;
-
     let provider = di::ServiceCollection::new()
         .add_cqrs(|options| {
             options.transcoders.events.push(events());

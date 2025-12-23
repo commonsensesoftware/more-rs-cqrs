@@ -2,7 +2,7 @@ use super::{DynEventStore, DynSnapshotStore, SqlOptions, merge};
 use crate::sqlite::{EventStore, SnapshotStore};
 use cfg_if::cfg_if;
 use cqrs::{
-    Aggregate, Clock, Mask, Repository, di::AggregateBuilder, event::Event, message::Transcoder,
+    Aggregate, Clock, Mask, Repository, prelude::AggregateBuilder, event::Event, message::Transcoder,
     snapshot::Snapshot,
 };
 use di::{

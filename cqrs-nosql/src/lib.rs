@@ -6,18 +6,10 @@ pub use version::{NoSqlVersion, NoSqlVersionPart};
 /// Provides storage using Amazon DynamoDB.
 pub mod dynamodb;
 
-use cfg_if::cfg_if;
 use std::{
     error::Error,
     time::{SystemTime, UNIX_EPOCH},
 };
-
-cfg_if! {
-    if #[cfg(feature = "di")] {
-        mod di;
-        pub use di::*;
-    }
-}
 
 #[allow(dead_code)]
 pub(crate) trait BoxErr<T> {
