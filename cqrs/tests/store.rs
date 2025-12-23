@@ -1,17 +1,24 @@
 mod common;
 
-use common::{domain::{self, Account}, TestResult};
+use common::{
+    TestResult,
+    domain::{self, Account},
+};
 use cqrs::{
-    event::Store, in_memory::EventStore, Repository, RepositoryError, VirtualClock,
+    Repository, RepositoryError, VirtualClock,
+    event::{Store, StoreOptions},
+    in_memory::EventStore,
 };
 use std::sync::Arc;
 
 #[tokio::test]
 async fn repository_should_save_aggregate() -> TestResult<RepositoryError<String>> {
     // arrange
-    let transcoder = domain::transcoder::events();
-    let clock = VirtualClock::new();
-    let store = Arc::new(EventStore::<String>::new(clock, transcoder));
+    let options = StoreOptions::builder()
+        .clock(VirtualClock::new())
+        .transcoder(domain::transcoder::events())
+        .build();
+    let store = Arc::new(EventStore::<String>::new(options));
     let repository: Repository<Account> = (store.clone() as Arc<dyn Store<String>>).into();
     let mut account = Account::open("42");
 
@@ -31,9 +38,11 @@ async fn repository_should_save_aggregate() -> TestResult<RepositoryError<String
 #[tokio::test]
 async fn repository_should_get_aggregate_by_id() -> TestResult<RepositoryError<String>> {
     // arrange
-    let transcoder = domain::transcoder::events();
-    let clock = VirtualClock::new();
-    let store = EventStore::<String>::new(clock, transcoder);
+    let options = StoreOptions::builder()
+        .clock(VirtualClock::new())
+        .transcoder(domain::transcoder::events())
+        .build();
+    let store = EventStore::<String>::new(options);
     let repository = Repository::new(store);
     let id = String::from("42");
     let mut account = Account::open(id.clone());

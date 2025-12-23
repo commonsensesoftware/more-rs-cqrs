@@ -161,6 +161,7 @@ where
     pub(crate) url: Option<String>,
     pub(crate) options: Option<PoolOptions<DB>>,
     pub(crate) mask: Option<Box<dyn Mask>>,
+    pub(crate) enforce_concurrency: bool,
     pub(crate) allow_delete: bool,
     pub(crate) use_snapshots: bool,
 }
@@ -187,6 +188,7 @@ where
             url: None,
             options: None,
             mask: None,
+            enforce_concurrency: false,
             allow_delete: false,
             use_snapshots: false,
         }
@@ -247,7 +249,13 @@ where
         self
     }
 
-    // Enables support for deletes, which is unsupported by default.
+    /// Enforces concurrency, which not enforced by default.
+    pub fn enforce_concurrency(mut self) -> Self {
+        self.enforce_concurrency = true;
+        self
+    }
+
+    /// Enables support for deletes, which is unsupported by default.
     pub fn deletes(mut self) -> Self {
         self.allow_delete = true;
         self
@@ -336,6 +344,7 @@ where
         let url = self.url.clone();
         let cfg_options = self.options.clone();
         let mask = self.mask.take().map(Arc::from);
+        let enforce_concurrency = self.enforce_concurrency;
         let allow_delete = self.allow_delete;
 
         self.parent.services.try_add(
@@ -365,6 +374,10 @@ where
 
                     if let Some(mask) = mask.clone().or_else(|| sp.get::<dyn Mask>()) {
                         builder = builder.mask(mask);
+                    }
+
+                    if enforce_concurrency {
+                        builder = builder.enforce_concurrency();
                     }
 
                     if allow_delete {

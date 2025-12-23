@@ -1,11 +1,10 @@
 use crate::{
-    Clock, Range, Version,
+    Clock, Mask, Range, Version,
     event::{self, Event, EventStream, IdStream, Predicate, StoreError},
-    message::{Descriptor, Saved, Schema, Transcoder},
+    message::{Descriptor, Saved, Schema},
     snapshot::{self, Retention, Snapshot, SnapshotError},
 };
 use async_trait::async_trait;
-use cfg_if::cfg_if;
 use futures::{
     future::ready,
     stream::{self, once},
@@ -26,12 +25,17 @@ use uuid::Uuid;
 // | ------- | ------- | -------- |
 // | version | unused  | sequence |
 
+fn new_version(number: u32) -> Version {
+    Version::new((number as u64) << 32)
+}
+
 trait EncodedVersion: Sized {
     fn max() -> Self;
     fn number(&self) -> u32;
     fn sequence(&self) -> u8;
     fn next_version(&self) -> Self;
     fn next_sequence(&self) -> Self;
+    fn invalid(&self) -> bool;
 }
 
 impl EncodedVersion for Version {
@@ -56,6 +60,10 @@ impl EncodedVersion for Version {
         let sequence = self.sequence().saturating_add(1);
         Self::new((version as u64) << 32 | sequence as u64)
     }
+
+    fn invalid(&self) -> bool {
+        (u64::from(self) & 0x00000000_FFFFFF00) != 0
+    }
 }
 
 #[derive(Clone)]
@@ -68,7 +76,7 @@ struct Row {
 /// Represents an in-memory [snapshot store](snapshot::Store).
 pub struct SnapshotStore<T = Uuid> {
     table: RwLock<HashMap<T, Row>>,
-    transcoder: Arc<Transcoder<dyn Snapshot>>,
+    options: snapshot::StoreOptions,
 }
 
 impl<T> SnapshotStore<T> {
@@ -76,12 +84,18 @@ impl<T> SnapshotStore<T> {
     ///
     /// # Arguments
     ///
-    /// * `transcoder` - the [transcoder](Transcoder) uses to encode and decode snapshots
-    pub fn new(transcoder: Transcoder<dyn Snapshot>) -> Self {
+    /// * `options` - the [store options](snapshot::StoreOptions)
+    pub fn new(options: snapshot::StoreOptions) -> Self {
         Self {
             table: Default::default(),
-            transcoder: transcoder.into(),
+            options,
         }
+    }
+}
+
+impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> From<SnapshotStore<T>> for Arc<dyn snapshot::Store<T>> {
+    fn from(value: SnapshotStore<T>) -> Self {
+        Arc::new(value)
     }
 }
 
@@ -93,8 +107,9 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
         predicate: Option<&snapshot::Predicate>,
     ) -> Result<Option<Saved<Box<dyn Snapshot>>>, SnapshotError> {
         if let Some(descriptor) = self.load_raw(id, predicate).await? {
-            Ok(Some(Saved::versioned(
-                self.transcoder
+            Ok(Some(Saved::new(
+                self.options
+                    .transcoder()
                     .decode(&descriptor.schema, &descriptor.content)
                     .map_err(SnapshotError::InvalidEncoding)?,
                 descriptor.version,
@@ -141,9 +156,19 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
     async fn save(
         &self,
         id: &T,
-        version: Version,
+        mut version: Version,
         snapshot: Box<dyn Snapshot>,
     ) -> Result<(), SnapshotError> {
+        if version != Default::default()
+            && let Some(mask) = self.options.mask()
+        {
+            version = version.unmask(mask);
+        }
+
+        if version.invalid() {
+            return Err(SnapshotError::InvalidVersion);
+        }
+
         let mut table = self.table.write().unwrap();
 
         if let Some(row) = table.get(id)
@@ -156,7 +181,8 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
             schema: snapshot.schema(),
             version,
             data: self
-                .transcoder
+                .options
+                .transcoder()
                 .encode(&*snapshot)
                 .map_err(SnapshotError::InvalidEncoding)?,
         };
@@ -172,29 +198,21 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
 }
 
 /// Represents an in-memory [event store](event::Store).
-pub struct EventStore<T = Uuid> {
-    table: RwLock<HashMap<T, Vec<Vec<Row>>>>,
-    transcoder: Arc<Transcoder<dyn Event>>,
-    clock: Arc<dyn Clock>,
-    snapshots: Option<Arc<dyn snapshot::Store<T>>>,
+pub struct EventStore<ID = Uuid> {
+    table: RwLock<HashMap<ID, Vec<Vec<Row>>>>,
+    options: event::StoreOptions<ID>,
 }
 
-impl<T> EventStore<T> {
+impl<ID: Clone + Debug + Eq + Hash + Send + Sync> EventStore<ID> {
     /// Initializes a new in-memory [EventStore].
     ///
     /// # Arguments
     ///
-    /// * `clock` - the type of [clock](Clock)
-    /// * `transcoder` - the [transcoder](Transcoder) uses to encode and decode events
-    pub fn new<C>(clock: C, transcoder: Transcoder<dyn Event>) -> Self
-    where
-        C: Clock + 'static,
-    {
+    /// * `options` - the [store options](event::StoreOptions)
+    pub fn new(options: event::StoreOptions<ID>) -> Self {
         Self {
             table: Default::default(),
-            transcoder: transcoder.into(),
-            clock: Arc::new(clock),
-            snapshots: Default::default(),
+            options,
         }
     }
 
@@ -208,37 +226,12 @@ impl<T> EventStore<T> {
             .flatten()
             .count()
     }
-}
-
-impl<T: Clone + Debug + Eq + Hash + Send + Sync> EventStore<T> {
-    /// Initializes a new in-memory [EventStore] with support for [snapshots](Snapshot).
-    ///
-    /// # Arguments
-    ///
-    /// * `clock` - the type of [clock](Clock)
-    /// * `transcoder` - the [transcoder](Transcoder) uses to encode and decode events
-    /// * `snapshots` - the [store](SnapshotStore) used for [snapshots](Snapshot)
-    pub fn with_snapshots<C>(
-        clock: C,
-        transcoder: Transcoder<dyn Event>,
-        snapshots: Arc<dyn snapshot::Store<T>>,
-    ) -> Self
-    where
-        C: Clock + 'static,
-    {
-        Self {
-            table: Default::default(),
-            transcoder: transcoder.into(),
-            clock: Arc::new(clock),
-            snapshots: Some(snapshots),
-        }
-    }
 
     async fn get_snapshot(
         &self,
-        predicate: Option<&Predicate<'_, T>>,
+        predicate: Option<&Predicate<'_, ID>>,
     ) -> Result<Option<Descriptor>, SnapshotError> {
-        if let Some(snapshots) = self.snapshots.as_deref()
+        if let Some(snapshots) = self.options.snapshots().as_deref()
             && let Some(predicate) = predicate
             && predicate.load.snapshots
             && let Some(id) = predicate.id
@@ -285,9 +278,14 @@ fn by<T: Debug + Send>(row: &Row, now: SystemTime, option: Option<&Predicate<T>>
 fn select_version<T: Debug + Send>(
     snapshot: Option<&Descriptor>,
     predicate: &Predicate<'_, T>,
+    mask: Option<&(dyn Mask + 'static)>,
 ) -> Option<usize> {
     if let Some(snapshot) = snapshot {
-        let version = snapshot.version;
+        let mut version = snapshot.version;
+
+        if let Some(mask) = mask {
+            version = version.unmask(mask);
+        }
 
         match predicate.version {
             Included(other) => {
@@ -316,14 +314,14 @@ fn select_version<T: Debug + Send>(
 #[async_trait]
 impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for EventStore<T> {
     fn clock(&self) -> Arc<dyn Clock> {
-        self.clock.clone()
+        (&self.options).into()
     }
 
     async fn ids(&self, _stored_on: Range<SystemTime>) -> IdStream<T> {
         let table = self.table.read().unwrap();
         let ids: Vec<_> = table.keys().cloned().map(Ok).collect();
 
-        Box::pin(futures::stream::iter(ids))
+        Box::pin(stream::iter(ids))
     }
 
     async fn load<'a>(&self, predicate: Option<&'a Predicate<'a, T>>) -> EventStream<'a, T> {
@@ -339,14 +337,15 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
         if let Some(predicate) = option.as_deref() {
             if let Some(id) = predicate.id {
                 if let Some(rows) = table.get(id) {
-                    let transcoder = self.transcoder.clone();
-                    let now = self.clock.clone().now();
-                    let mut rows = if let Some(index) = select_version(snapshot.as_ref(), predicate)
-                    {
-                        rows.iter().skip(index).cloned().collect()
-                    } else {
-                        rows.clone()
-                    };
+                    let options = self.options.clone();
+                    let now = options.clock().now();
+                    let mask = options.mask();
+                    let mut rows =
+                        if let Some(index) = select_version(snapshot.as_ref(), predicate, mask) {
+                            rows.iter().skip(index).cloned().collect()
+                        } else {
+                            rows.clone()
+                        };
 
                     if let Some(snapshot) = snapshot {
                         rows.insert(
@@ -364,11 +363,18 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
                             .flatten()
                             .filter(move |row| by(row, now, option.as_deref()))
                             .map(move |row| {
-                                Ok(Saved::versioned(
-                                    transcoder
+                                let mut version = row.version;
+
+                                if let Some(mask) = options.mask() {
+                                    version = version.mask(mask);
+                                }
+
+                                Ok(Saved::new(
+                                    options
+                                        .transcoder()
                                         .decode(&row.schema, &row.data)
                                         .map_err(StoreError::InvalidEncoding)?,
-                                    row.version,
+                                    version,
                                 ))
                             }),
                     ))
@@ -376,8 +382,8 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
                     Box::pin(stream::iter(std::iter::empty()))
                 }
             } else {
-                let transcoder = self.transcoder.clone();
-                let now = self.clock.clone().now();
+                let options = self.options.clone();
+                let now = options.clock().now();
                 let version = match predicate.version {
                     Included(version) => Some(version),
                     Excluded(version) => Some(version),
@@ -401,25 +407,39 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
                         .flatten()
                         .filter(move |row| by(row, now, option.as_deref()))
                         .map(move |row| {
-                            Ok(Saved::versioned(
-                                transcoder
+                            let mut version = row.version;
+
+                            if let Some(mask) = options.mask() {
+                                version = version.mask(mask);
+                            }
+
+                            Ok(Saved::new(
+                                options
+                                    .transcoder()
                                     .decode(&row.schema, &row.data)
                                     .map_err(StoreError::InvalidEncoding)?,
-                                row.version,
+                                version,
                             ))
                         }),
                 ))
             }
         } else {
-            let transcoder = self.transcoder.clone();
+            let options = self.options.clone();
             let rows: Vec<_> = table.values().flatten().flatten().cloned().collect();
 
             Box::pin(stream::iter(rows.into_iter().map(move |row| {
-                Ok(Saved::versioned(
-                    transcoder
+                let mut version = row.version;
+
+                if let Some(mask) = options.mask() {
+                    version = version.mask(mask);
+                }
+
+                Ok(Saved::new(
+                    options
+                        .transcoder()
                         .decode(&row.schema, &row.data)
                         .map_err(StoreError::InvalidEncoding)?,
-                    row.version,
+                    version,
                 ))
             })))
         }
@@ -428,11 +448,21 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
     async fn save(
         &self,
         id: &T,
-        expected_version: Version,
+        mut expected_version: Version,
         events: &[Box<dyn Event>],
-    ) -> Result<Option<Version>, StoreError<T>> {
+    ) -> Result<Version, StoreError<T>> {
         if events.is_empty() {
-            return Ok(None);
+            return Ok(expected_version);
+        }
+
+        if expected_version != Version::default()
+            && let Some(mask) = self.options.mask()
+        {
+            expected_version = expected_version.unmask(mask);
+        }
+
+        if expected_version.invalid() {
+            return Err(StoreError::InvalidVersion);
         }
 
         if events.len() > <Version as EncodedVersion>::max().sequence() as usize {
@@ -447,7 +477,11 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
             let count = rows.len();
 
             if count > 0 && count > expected_version.number() as usize {
-                return Err(StoreError::Conflict(id.clone(), expected_version.number()));
+                if self.options.concurrency().enforced() {
+                    return Err(StoreError::Conflict(id.clone(), expected_version.number()));
+                } else {
+                    expected_version = new_version(count as u32);
+                }
             }
         } else if expected_version.number() > 1 {
             return Err(StoreError::Deleted(id.clone()));
@@ -461,7 +495,8 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
                 schema: event.schema(),
                 version,
                 data: self
-                    .transcoder
+                    .options
+                    .transcoder()
                     .encode(event.as_ref())
                     .map_err(StoreError::InvalidEncoding)?,
             };
@@ -478,49 +513,23 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> event::Store<T> for E
             .and_modify(|row| row.append(&mut rows))
             .or_insert(rows);
 
-        Ok(Some(version))
+        if let Some(mask) = self.options.mask() {
+            version = version.mask(mask);
+        }
+
+        Ok(version)
     }
 
     async fn delete(&self, id: &T) -> Result<(), StoreError<T>> {
-        if let Some(snapshots) = &self.snapshots {
+        if self.options.delete().unsupported() {
+            return Err(StoreError::Unsupported);
+        }
+
+        if let Some(snapshots) = self.options.snapshots() {
             snapshots.prune(id, None).await?;
         }
 
         let _ = self.table.write().unwrap().remove(id);
         Ok(())
-    }
-}
-
-cfg_if! {
-    if #[cfg(feature = "di")] {
-        use di::{inject, injectable, Ref};
-
-        #[injectable(snapshot::Store<T>)]
-        impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> SnapshotStore<T> {
-            #[inject]
-            fn _new(transcoder: Ref<Transcoder<dyn Snapshot>>) -> Self {
-                Self {
-                    table: Default::default(),
-                    transcoder,
-                }
-            }
-        }
-
-        #[injectable(event::Store<T>)]
-        impl<T: Clone + Debug + Eq + Hash + Send + Sync + 'static> EventStore<T> {
-            #[inject]
-            fn _new(
-                clock: Ref<dyn Clock>,
-                transcoder: Ref<Transcoder<dyn Event>>,
-                snapshots: Option<Arc<dyn snapshot::Store<T>>>,
-            ) -> Self {
-                Self {
-                    table: Default::default(),
-                    transcoder,
-                    clock,
-                    snapshots,
-                }
-            }
-        }
     }
 }

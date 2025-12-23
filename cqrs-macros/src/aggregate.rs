@@ -195,7 +195,7 @@ fn implement_trait(
                             while let Some(result) = history.next().await {
                                 let saved = result?;
                                 __self.replay(saved.message().as_ref());
-                                __self.version = saved.version().unwrap_or_default();
+                                __self.version = saved.version();
                             }
                             let uncommitted = std::mem::take(&mut __self.events);
                             for event in &uncommitted {

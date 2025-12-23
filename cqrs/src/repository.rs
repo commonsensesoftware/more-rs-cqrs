@@ -143,16 +143,12 @@ where
             return Ok(());
         }
 
-        let expected_version = changes.expected_version();
-        let current_version = self
+        let version = self
             .store
-            .save(&id, expected_version, changes.uncommitted())
+            .save(&id, changes.expected_version(), changes.uncommitted())
             .await?;
 
-        if let Some(version) = current_version {
-            changes.accept(version);
-        }
-
+        changes.accept(version);
         Ok(())
     }
 

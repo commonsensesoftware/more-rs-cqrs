@@ -13,7 +13,7 @@ fn yield_item<T: Event + 'static>(
     event: T,
     version: u64,
 ) -> Result<Saved<Box<dyn Event>>, Box<dyn Error + Send>> {
-    Ok(Saved::versioned(Box::new(event), Version::new(version)))
+    Ok(Saved::new(Box::new(event), Version::new(version)))
 }
 
 #[test]

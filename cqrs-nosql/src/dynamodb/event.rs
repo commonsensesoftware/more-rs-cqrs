@@ -20,7 +20,10 @@ use aws_sdk_dynamodb::{
 };
 use cqrs::{
     Clock, Mask, Range, Version,
-    event::{Delete, Event, EventStream, IdStream, Predicate, PredicateBuilder, Store, StoreError},
+    event::{
+        Delete, Event, EventStream, IdStream, Predicate, PredicateBuilder, Store, StoreError,
+        StoreOptions,
+    },
     message::{Saved, Schema, Transcoder},
     snapshot,
 };
@@ -134,11 +137,7 @@ where
 pub struct EventStore<T> {
     ddb: Client,
     table: String,
-    delete: Delete,
-    mask: Option<Arc<dyn Mask>>,
-    clock: Arc<dyn Clock>,
-    transcoder: Arc<Transcoder<dyn Event>>,
-    snapshots: Option<Arc<dyn snapshot::Store<T>>>,
+    options: StoreOptions<ID>,
 }
 
 impl<T> EventStore<T> {
@@ -148,27 +147,12 @@ impl<T> EventStore<T> {
     ///
     /// * `client` - the underlying [client](Client)
     /// * `table` - the table identifier
-    /// * `mask` - the optional [mask](Mask) used to obfuscate [versions](Version)
-    /// * `clock` - the associated [clock](Clock)
-    /// * `transcoder` - the associated [transcoder](Transcoder)
-    /// * `delete` - indicates whether [deletes](Delete) are supported
-    pub fn new(
-        client: Client,
-        table: String,
-        mask: Option<Arc<dyn Mask>>,
-        clock: Arc<dyn Clock>,
-        transcoder: Arc<Transcoder<dyn Event>>,
-        snapshots: Option<Arc<dyn snapshot::Store<T>>>,
-        delete: Delete,
-    ) -> Self {
+    /// * `options` - the [store options](StoreOptions)
+    pub fn new(client: Client, table: String, options: StoreOptions<ID>) -> Self {
         Self {
             ddb: client,
             table,
-            delete,
-            mask,
-            clock,
-            transcoder,
-            snapshots,
+            options,
         }
     }
 
@@ -189,11 +173,11 @@ where
         version: Version,
         event: &Box<dyn Event>,
     ) -> Result<Version, StoreError<T>> {
-        let stored_on = crate::to_secs(self.clock.now());
+        let stored_on = crate::to_secs(self.options.clock().now());
         let schema = event.schema();
-        let content = self.transcoder.encode(event.as_ref())?;
+        let content = self.options.transcoder().encode(event.as_ref())?;
 
-        if self.delete.supported()
+        if self.options.delete().supported()
             && let Some(previous) = version.previous()
         {
             let mut request = self.ddb.transact_write_items();
@@ -300,10 +284,10 @@ where
         mut version: Version,
         events: &[Box<dyn Event>],
     ) -> Result<Version, StoreError<T>> {
-        let stored_on = crate::to_secs(self.clock.now());
+        let stored_on = crate::to_secs(self.options.clock().now());
         let mut request = self.ddb.transact_write_items();
 
-        if self.delete.supported()
+        if self.options.delete().supported()
             && let Some(previous) = version.previous()
         {
             // the following update doesn't change anything, but it ensures the previous
@@ -327,7 +311,7 @@ where
 
         for event in events {
             let schema = event.schema();
-            let content = self.transcoder.encode(event.as_ref())?;
+            let content = self.options.transcoder().encode(event.as_ref())?;
             let mut put = Put::builder()
                 .table_name(&self.table)
                 .item("id", S(id.to_string()))
@@ -389,7 +373,7 @@ where
     T: Clone + Debug + Default + FromStr + Send + Sync + ToString + 'static,
 {
     fn clock(&self) -> Arc<dyn Clock> {
-        self.clock.clone()
+        (&self.options).into()
     }
 
     async fn ids(&self, stored_on: Range<SystemTime>) -> IdStream<T> {
@@ -399,11 +383,11 @@ where
             .table_name(&self.table)
             .key_condition_expression("version = :version")
             .expression_attribute_values(":version", N(new_version(1, 0).sort_key().to_string()));
-        let mask = self.mask.clone();
         let predicate = PredicateBuilder::<T>::new(None)
             .stored_on(stored_on)
             .build();
-        let query = apply_predicate(request, Some(&predicate), mask.clone()).into_paginator();
+        let query =
+            apply_predicate(request, Some(&predicate), self.options.mask()).into_paginator();
         let mut items = query.items().send();
 
         Box::pin(try_stream! {
@@ -416,10 +400,9 @@ where
 
     async fn load<'a>(&self, predicate: Option<&'a Predicate<'a, T>>) -> EventStream<'a, T> {
         let request = self.ddb.query().table_name(&self.table);
-        let mask = self.mask.clone();
-        let query = apply_predicate(request, predicate, mask.clone()).into_paginator();
+        let query = apply_predicate(request, predicate, self.options.mask()).into_paginator();
         let mut items = query.items().send();
-        let transcoder = self.transcoder.clone();
+        let options = self.options.clone();
 
         Box::pin(try_stream! {
             while let Some(item) = items.next().await {
@@ -434,13 +417,13 @@ where
                 } else {
                     &empty
                 };
-                let event = transcoder.decode(&schema, content.as_ref())?;
+                let event = options.transcoder().decode(&schema, content.as_ref())?;
 
-                if let Some(mask) = &mask {
+                if let Some(mask) = options.mask() {
                     version = version.mask(mask);
                 }
 
-                yield Saved::versioned(event, version);
+                yield Saved::new(event, version);
             }
         })
     }
@@ -448,44 +431,64 @@ where
     async fn save(
         &self,
         id: &T,
-        mut expected_version: Version,
+        expected_version: Version,
         events: &[Box<dyn Event>],
-    ) -> Result<Option<Version>, StoreError<T>> {
+    ) -> Result<Version, StoreError<T>> {
         if events.is_empty() {
             return Ok(None);
         }
 
-        if expected_version != Version::default()
-            && let Some(mask) = &self.mask
+        let mut version = if expected_version != Version::default()
+            && let Some(mask) = self.options.mask()
         {
-            expected_version = expected_version.unmask(mask);
-        }
+            expected_version.unmask(mask)
+        } else {
+            expected_version
+        };
 
-        if expected_version.invalid() {
+        if version.invalid() {
             return Err(StoreError::InvalidVersion);
         }
 
-        expected_version = expected_version.increment(ByOne);
+        loop {
+            version = version.increment(ByOne);
 
-        let mut version = if events.len() == 1 {
-            self.write_one(id, expected_version, &events[0]).await?
-        } else {
-            self.write_all(id, expected_version, events).await?
-        };
+            let result = if events.len() == 1 {
+                self.write_one(id, version, &events[0]).await?
+            } else {
+                self.write_all(id, version, events).await?
+            };
 
-        if let Some(mask) = &self.mask {
+            match result {
+                Ok(current) => {
+                    version = current;
+                    break;
+                },
+                Err(error) => {
+                    if matches!(error, StoreError::Conflict(_, _))
+                        && !self.options.concurrency().enforced()
+                    {
+                        continue;
+                    } else {
+                        return Err(error);
+                    }
+                }
+            }
+        }
+
+        if let Some(mask) = self.options.mask() {
             version = version.mask(mask);
         }
 
-        Ok(Some(version))
+        Ok(version)
     }
 
     async fn delete(&self, id: &T) -> Result<(), StoreError<T>> {
-        if self.delete.unsupported() {
+        if self.options.delete().unsupported() {
             return Err(StoreError::Unsupported);
         }
 
-        if let Some(snapshots) = &self.snapshots {
+        if let Some(snapshots) = self.options.snapshots() {
             snapshots.prune(id, None).await?;
         }
 

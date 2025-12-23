@@ -3,7 +3,7 @@ use crate::Version;
 /// Represents a saved [message](super::Message).
 pub struct Saved<T> {
     message: T,
-    version: Option<Version>,
+    version: Version,
 }
 
 impl<T> Saved<T> {
@@ -13,22 +13,10 @@ impl<T> Saved<T> {
     ///
     /// * `message` - The versioned [message](super::Message)
     /// * `version` - The message [version](Version)
-    pub fn versioned(message: T, version: Version) -> Self {
+    pub fn new(message: T, version: Version) -> Self {
         Self {
             message,
-            version: Some(version),
-        }
-    }
-
-    /// Initializes new unversioned [Saved] message.
-    ///
-    /// # Arguments
-    ///
-    /// * `message` - The unversioned [message](super::Message)
-    pub fn unversioned(message: T) -> Self {
-        Self {
-            message,
-            version: None,
+            version,
         }
     }
 
@@ -38,18 +26,12 @@ impl<T> Saved<T> {
     }
 
     /// Gets the message [version](Version), if any.
-    pub fn version(&self) -> Option<Version> {
+    pub fn version(&self) -> Version {
         self.version
     }
 }
 
-impl<T> From<(T, Option<Version>)> for Saved<T> {
-    fn from((message, version): (T, Option<Version>)) -> Self {
-        Self { message, version }
-    }
-}
-
-impl<T> From<Saved<T>> for (T, Option<Version>) {
+impl<T> From<Saved<T>> for (T, Version) {
     fn from(saved: Saved<T>) -> Self {
         (saved.message, saved.version)
     }

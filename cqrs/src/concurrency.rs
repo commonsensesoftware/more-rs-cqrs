@@ -2,10 +2,10 @@
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum Concurrency {
     /// Indicates no concurrency is enforced.
+    #[default]
     None,
 
     /// Indicates strict concurrency is enforced.
-    #[default]
     Enforced,
 }
 

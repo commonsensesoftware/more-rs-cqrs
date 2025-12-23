@@ -1,16 +1,16 @@
-use super::{merge, DynEventStore, DynSnapshotStore, SqlOptions};
+use super::{DynEventStore, DynSnapshotStore, SqlOptions, merge};
 use crate::sqlite::{EventStore, SnapshotStore};
 use cfg_if::cfg_if;
 use cqrs::{
-    di::AggregateBuilder, event::Event, message::Transcoder, snapshot::Snapshot, Aggregate, Clock,
-    Mask, Repository,
+    Aggregate, Clock, Mask, Repository, di::AggregateBuilder, event::Event, message::Transcoder,
+    snapshot::Snapshot,
 };
 use di::{
-    exactly_one, exactly_one_with_key, singleton_as_self, singleton_with_key,
-    singleton_with_key_factory, zero_or_one, zero_or_one_with_key, Ref, ServiceCollection,
+    Ref, ServiceCollection, exactly_one, exactly_one_with_key, singleton_as_self,
+    singleton_with_key, singleton_with_key_factory, zero_or_one, zero_or_one_with_key,
 };
 use options::OptionsSnapshot;
-use sqlx::{pool::PoolOptions, Decode, Encode, Sqlite, Type};
+use sqlx::{Decode, Encode, Sqlite, Type, pool::PoolOptions};
 use std::{any::type_name, marker::PhantomData, sync::Arc};
 
 /// Represents the SQLite storage configuration extensions.
@@ -114,7 +114,7 @@ where
                         builder = builder.options(db.options.clone());
                     }
 
-                    Ref::new( EventStore::try_from(builder).unwrap())
+                    Ref::new(EventStore::try_from(builder).unwrap())
                 }),
         );
     }
@@ -131,6 +131,7 @@ where
     url: Option<String>,
     options: Option<PoolOptions<Sqlite>>,
     mask: Option<Box<dyn Mask>>,
+    enforce_concurrency: bool,
     allow_delete: bool,
     use_snapshots: bool,
 }
@@ -147,6 +148,7 @@ where
             url: None,
             options: None,
             mask: None,
+            enforce_concurrency: false,
             allow_delete: false,
             use_snapshots: false,
         }
@@ -207,7 +209,13 @@ where
         self
     }
 
-    // Enables support for deletes, which is unsupported by default.
+    /// Enforces concurrency, which not enforced by default.
+    pub fn enforce_concurrency(mut self) -> Self {
+        self.enforce_concurrency = true;
+        self
+    }
+
+    /// Enables support for deletes, which is unsupported by default.
     pub fn deletes(mut self) -> Self {
         self.allow_delete = true;
         self
@@ -278,6 +286,7 @@ where
         let url = self.url.clone();
         let cfg_options = self.options.clone();
         let mask = self.mask.take().map(Arc::from);
+        let enforce_concurrency = self.enforce_concurrency;
         let allow_delete = self.allow_delete;
 
         self.parent
@@ -309,6 +318,10 @@ where
 
                         if let Some(mask) = mask.clone().or_else(|| sp.get::<dyn Mask>()) {
                             builder = builder.mask(mask);
+                        }
+
+                        if enforce_concurrency {
+                            builder = builder.enforce_concurrency();
                         }
 
                         if allow_delete {

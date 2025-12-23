@@ -48,6 +48,7 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
                 .with()
                 .url("sqlite::memory:")
                 .mask(SecureMask::ephemeral())
+                .enforce_concurrency()
                 .migrations();
         })
         .build_provider()

@@ -1,4 +1,5 @@
 mod aggregate;
+mod builder;
 mod clock;
 mod concurrency;
 mod mask;
@@ -8,6 +9,7 @@ mod repository;
 mod version;
 
 pub use aggregate::{Aggregate, ChangeSet, EventHistory};
+pub use builder::StoreOptionsBuilder;
 pub use clock::{Clock, ClockHolder, VirtualClock, WallClock};
 pub use concurrency::Concurrency;
 pub use mask::{Mask, SecureMask};

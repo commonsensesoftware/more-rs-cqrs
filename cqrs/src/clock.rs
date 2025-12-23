@@ -28,6 +28,12 @@ impl Clock for WallClock {
     }
 }
 
+impl From<WallClock> for Arc<dyn Clock> {
+    fn from(value: WallClock) -> Self {
+        Arc::new(value)
+    }
+}
+
 /// Represents a virtual [clock](Clock).
 #[derive(Clone)]
 pub struct VirtualClock(Arc<RwLock<Arc<dyn Fn() -> SystemTime + Send + Sync>>>);
@@ -86,6 +92,12 @@ impl Default for VirtualClock {
 impl Clock for VirtualClock {
     fn now(&self) -> SystemTime {
         (self.0.read().unwrap())()
+    }
+}
+
+impl From<VirtualClock> for Arc<dyn Clock> {
+    fn from(value: VirtualClock) -> Self {
+        Arc::new(value)
     }
 }
 

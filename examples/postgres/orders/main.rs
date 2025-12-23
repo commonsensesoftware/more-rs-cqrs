@@ -52,6 +52,7 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
                 .with()
                 .url(url)
                 .mask(SecureMask::ephemeral())
+                .enforce_concurrency()
                 .migrations();
         })
         .build_provider()

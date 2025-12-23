@@ -129,6 +129,7 @@ where
     config: Option<SdkConfig>,
     client: Option<Client>,
     mask: Option<Box<dyn Mask>>,
+    enforce_concurrency: bool,
     allow_delete: bool,
     use_snapshots: bool,
 }
@@ -144,6 +145,7 @@ where
             config: None,
             client: None,
             mask: None,
+            enforce_concurrency: false,
             allow_delete: false,
             use_snapshots: false,
         }
@@ -319,6 +321,10 @@ where
                         && let Some(client) = options.get(Some(table)).as_ref()
                     {
                         builder = builder.client(client.clone());
+                    }
+
+                    if enforce_concurrency {
+                        builder = builder.enforce_concurrency();
                     }
 
                     if allow_delete {

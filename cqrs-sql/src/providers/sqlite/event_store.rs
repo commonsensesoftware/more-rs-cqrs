@@ -8,10 +8,9 @@ use crate::{
 use async_stream::try_stream;
 use async_trait::async_trait;
 use cqrs::{
-    Clock, Mask, Range, Version,
-    event::{Delete, Event, EventStream, IdStream, Predicate, Store, StoreError},
-    message::{Saved, Schema, Transcoder},
-    snapshot,
+    Clock, Range, Version,
+    event::{Event, EventStream, IdStream, Predicate, Store, StoreError, StoreOptions},
+    message::{Saved, Schema},
 };
 use futures::stream;
 use sqlx::Sqlite;
@@ -20,13 +19,9 @@ use std::{error::Error, fmt::Debug, ops::Bound::Unbounded, sync::Arc, time::Syst
 
 /// Represents a SQLite [event store](Store).
 pub struct EventStore<ID> {
-    delete: Delete,
     table: String,
     pub(crate) pool: Pool<Sqlite>,
-    mask: Option<Arc<dyn Mask>>,
-    clock: Arc<dyn Clock>,
-    transcoder: Arc<Transcoder<dyn Event>>,
-    snapshots: Option<Arc<dyn snapshot::Store<ID>>>,
+    options: StoreOptions<ID>,
 }
 
 impl<ID> EventStore<ID> {
@@ -36,27 +31,12 @@ impl<ID> EventStore<ID> {
     ///
     /// * `table` - the table identifier
     /// * `pool` - the underlying [connection pool](Pool)
-    /// * `mask` - the optional [mask](Mask) used to obfuscate [versions](Version)
-    /// * `clock` - the associated [clock](Clock)
-    /// * `transcoder` - the associated [transcoder](Transcoder)
-    /// * `delete` - indicates whether [deletes](Delete) are supported
-    pub fn new(
-        table: String,
-        pool: Pool<Sqlite>,
-        mask: Option<Arc<dyn Mask>>,
-        clock: Arc<dyn Clock>,
-        transcoder: Arc<Transcoder<dyn Event>>,
-        snapshots: Option<Arc<dyn snapshot::Store<ID>>>,
-        delete: Delete,
-    ) -> Self {
+    /// * `options` - the [store options](StoreOptions)
+    pub fn new(table: String, pool: Pool<Sqlite>, options: StoreOptions<ID>) -> Self {
         Self {
-            delete,
             table,
             pool,
-            mask,
-            clock,
-            transcoder,
-            snapshots,
+            options,
         }
     }
 
@@ -83,7 +63,7 @@ where
         + 'static,
 {
     fn clock(&self) -> Arc<dyn Clock> {
-        self.clock.clone()
+        (&self.options).into()
     }
 
     async fn ids(&self, stored_on: Range<SystemTime>) -> IdStream<ID> {
@@ -109,13 +89,12 @@ where
             Ok(db) => db,
             Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::Unknown(error))])),
         };
-        let snapshot = match get_snapshot(self.snapshots.as_deref(), predicate).await {
+        let snapshot = match get_snapshot(self.options.snapshots(), predicate).await {
             Ok(snapshot) => snapshot,
             Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::from(error))])),
         };
         let name = self.table.clone();
-        let mask = self.mask.clone();
-        let transcoder = self.transcoder.clone();
+        let options = self.options.clone();
 
         Box::pin(try_stream! {
             const TYPE: usize = 0;
@@ -127,11 +106,11 @@ where
             let mut version = Unbounded;
 
             if let Some(filter) = predicate {
-                version = select_version(snapshot.as_ref(), filter, mask.clone());
+                version = select_version(snapshot.as_ref(), filter, options.mask());
 
                 if let Some(snapshot) = snapshot {
-                    let event = transcoder.decode(&snapshot.schema, &snapshot.content)?;
-                    yield Saved::versioned(event, snapshot.version);
+                    let event = options.transcoder().decode(&snapshot.schema, &snapshot.content)?;
+                    yield Saved::new(event, snapshot.version);
                 }
             }
 
@@ -146,17 +125,17 @@ where
                     row.get::<i16, _>(REVISION) as u8,
                 );
                 let content = row.get::<&[u8], _>(CONTENT);
-                let event = transcoder.decode(&schema, content)?;
+                let event = options.transcoder().decode(&schema, content)?;
                 let mut version = new_version(
                     row.get::<i32, _>(VERSION),
                     row.get::<i16, _>(SEQUENCE),
                 );
 
-                if let Some(mask) = &mask {
+                if let Some(mask) = options.mask() {
                     version = version.mask(mask);
                 }
 
-                yield Saved::versioned(event, version);
+                yield Saved::new(event, version);
             }
         })
     }
@@ -164,98 +143,130 @@ where
     async fn save(
         &self,
         id: &ID,
-        mut expected_version: Version,
+        expected_version: Version,
         events: &[Box<dyn Event>],
-    ) -> Result<Option<Version>, StoreError<ID>> {
+    ) -> Result<Version, StoreError<ID>> {
         if events.is_empty() {
-            return Ok(None);
+            return Ok(expected_version);
         }
 
-        if expected_version != Version::default()
-            && let Some(mask) = &self.mask
+        let mut version = if expected_version != Version::default()
+            && let Some(mask) = self.options.mask()
         {
-            expected_version = expected_version.unmask(mask);
-        }
+            expected_version.unmask(mask)
+        } else {
+            expected_version
+        };
 
-        if expected_version.invalid() {
+        if version.invalid() {
             return Err(StoreError::InvalidVersion);
         }
 
         let table = self.table();
-        let context = Context {
-            id: id.clone(),
-            version: expected_version.increment(SqlVersionPart::Version),
-            clock: &*self.clock,
-            transcoder: &self.transcoder,
-        };
-        let mut rows = events.into_rows(context);
-        let first = if let Some(row) = rows.next() {
-            row?
-        } else {
-            return Ok(None);
-        };
 
-        let mut db = self.pool.acquire().await.box_err()?;
+        loop {
+            version = version.increment(SqlVersionPart::Version);
 
-        if let Some(second) = rows.next() {
-            let mut tx = db.begin().await.box_err()?;
-            let second = second?;
+            let context = Context {
+                id: id.clone(),
+                version,
+                clock: self.options.clock(),
+                transcoder: self.options.transcoder(),
+            };
+            let mut rows = events.into_rows(context);
+            let first = if let Some(row) = rows.next() {
+                row?
+            } else {
+                return Ok(expected_version);
+            };
 
-            if self.delete.supported()
-                && let Some(previous) = first.previous()
-            {
-                cmd::ensure_not_deleted(&table, &previous, &mut tx).await?;
-            }
+            let mut db = self.pool.acquire().await.box_err()?;
 
-            cmd::insert_transacted(&table, &first, &mut tx).await?;
-            cmd::insert_transacted(&table, &second, &mut tx).await?;
-
-            #[allow(clippy::while_let_on_iterator)] // false positive; rows.version() used below
-            while let Some(row) = rows.next() {
-                let row = row?;
-                cmd::insert_transacted(&table, &row, &mut tx).await?;
-            }
-
-            tx.commit().await.box_err()?;
-        } else {
-            let mut execute = true;
-
-            if self.delete.supported()
-                && let Some(previous) = first.previous()
-            {
+            if let Some(second) = rows.next() {
                 let mut tx = db.begin().await.box_err()?;
+                let second = second?;
 
-                cmd::ensure_not_deleted(&table, &previous, &mut tx).await?;
-                cmd::insert_transacted(&table, &first, &mut tx).await?;
-                tx.commit().await.box_err()?;
-                execute = false;
-            }
+                if self.options.delete().supported()
+                    && let Some(previous) = first.previous()
+                {
+                    cmd::ensure_not_deleted(&table, &previous, &mut tx).await?;
+                }
 
-            if execute {
-                let mut insert = command::insert(&table, &first);
+                let result = cmd::insert_transacted(&table, &first, &mut tx).await;
 
-                if let Err(error) = insert.build().execute(&mut *db).await {
-                    if let sqlx::Error::Database(error) = &error
-                        && error.is_unique_violation()
-                    {
-                        return Err(StoreError::Conflict(id.clone(), first.version as u32));
+                // if the first row succeeds or fails, the rest will fail or succeed
+                if matches!(result, Err(StoreError::Conflict(_, _))) {
+                    if self.options.concurrency().enforced() {
+                        result?;
+                    } else {
+                        continue;
                     }
-                    return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
+                }
+
+                cmd::insert_transacted(&table, &second, &mut tx).await?;
+
+                #[allow(clippy::while_let_on_iterator)] // false positive; rows.version() used below
+                while let Some(row) = rows.next() {
+                    let row = row?;
+                    cmd::insert_transacted(&table, &row, &mut tx).await?;
+                }
+
+                tx.commit().await.box_err()?;
+            } else {
+                let mut execute = true;
+
+                if self.options.delete().supported()
+                    && let Some(previous) = first.previous()
+                {
+                    let mut tx = db.begin().await.box_err()?;
+
+                    cmd::ensure_not_deleted(&table, &previous, &mut tx).await?;
+
+                    let result = cmd::insert_transacted(&table, &first, &mut tx).await;
+
+                    if matches!(result, Err(StoreError::Conflict(_, _))) {
+                        if self.options.concurrency().enforced() {
+                            result?;
+                        } else {
+                            continue;
+                        }
+                    }
+
+                    tx.commit().await.box_err()?;
+                    execute = false;
+                }
+
+                if execute {
+                    let mut insert = command::insert(&table, &first);
+
+                    if let Err(error) = insert.build().execute(&mut *db).await {
+                        if let sqlx::Error::Database(error) = &error
+                            && error.is_unique_violation()
+                        {
+                            if self.options.concurrency().enforced() {
+                                return Err(StoreError::Conflict(id.clone(), first.version as u32));
+                            } else {
+                                continue;
+                            }
+                        }
+                        return Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>));
+                    }
                 }
             }
+
+            version = rows.version();
+            break;
         }
 
-        let mut version = rows.version();
-
-        if let Some(mask) = &self.mask {
+        if let Some(mask) = self.options.mask() {
             version = version.mask(mask);
         }
 
-        Ok(Some(version))
+        Ok(version)
     }
 
     async fn delete(&self, id: &ID) -> Result<(), StoreError<ID>> {
-        if self.delete.unsupported() {
+        if self.options.delete().unsupported() {
             return Err(StoreError::Unsupported);
         }
 
@@ -263,7 +274,7 @@ where
         // sqlx doesn't appear to provide any extra protections. it's unclear if savepoints will make
         // any difference. snapshots are intrinsically volatile so delete them first. if deleting the
         // events somehow fail, things are still in a recoverable state
-        if let Some(snapshots) = &self.snapshots {
+        if let Some(snapshots) = self.options.snapshots() {
             snapshots.prune(id, None).await?;
         }
 

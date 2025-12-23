@@ -1,15 +1,21 @@
 mod common;
 
-use common::{domain::{self, Account}, projector::StatementGenerator, TestResult};
-use cqrs::{event::Store, in_memory::EventStore, Repository, RepositoryError, VirtualClock};
+use common::{
+    TestResult,
+    domain::{self, Account},
+    projector::StatementGenerator,
+};
+use cqrs::{Repository, RepositoryError, VirtualClock, event::{Store, StoreOptions}, in_memory::EventStore};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn projector_should_produce_monthly_statement() -> TestResult<RepositoryError<String>> {
     // arrange
-    let transcoder = domain::transcoder::events();
-    let clock = VirtualClock::new();
-    let store = Arc::new(EventStore::<String>::new(clock, transcoder));
+    let options = StoreOptions::builder()
+        .clock(VirtualClock::new())
+        .transcoder(domain::transcoder::events())
+        .build();
+    let store = Arc::new(EventStore::<String>::new(options));
     let repository: Repository<Account> = (store.clone() as Arc<dyn Store<String>>).into();
     let id = String::from("42");
     let mut account = Account::open(&id);

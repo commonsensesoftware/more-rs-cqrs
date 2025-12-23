@@ -5,22 +5,20 @@ use crate::{
 };
 use async_trait::async_trait;
 use cqrs::{
-    Clock, Mask, Version,
-    message::{Descriptor, Saved, Schema, Transcoder},
-    snapshot::{Predicate, Retention, Snapshot, SnapshotError, Store},
+    Version,
+    message::{Descriptor, Saved, Schema},
+    snapshot::{Predicate, Retention, Snapshot, SnapshotError, Store, StoreOptions},
 };
 use futures::StreamExt;
 use sqlx::{Connection, Decode, Encode, Pool, Row, Sqlite, Type};
-use std::{fmt::Debug, marker::PhantomData, sync::Arc};
+use std::{fmt::Debug, marker::PhantomData};
 
 /// Represents a SQLite [snapshot store](Store).
 pub struct SnapshotStore<ID> {
     _id: PhantomData<ID>,
     table: String,
     pub(crate) pool: Pool<Sqlite>,
-    mask: Option<Arc<dyn Mask>>,
-    clock: Arc<dyn Clock>,
-    transcoder: Arc<Transcoder<dyn Snapshot>>,
+    options: StoreOptions,
 }
 
 impl<ID> SnapshotStore<ID> {
@@ -30,23 +28,13 @@ impl<ID> SnapshotStore<ID> {
     ///
     /// * `table` - the table identifier
     /// * `pool` - the underlying [connection pool](Pool)
-    /// * `mask` - the [mask](Mask) used to obfuscate [versions](Version)
-    /// * `clock` - the associated [clock](Clock)
-    /// * `transcoder` - the associated [transcoder](Transcoder)
-    pub fn new(
-        table: String,
-        pool: Pool<Sqlite>,
-        mask: Option<Arc<dyn Mask>>,
-        clock: Arc<dyn Clock>,
-        transcoder: Arc<Transcoder<dyn Snapshot>>,
-    ) -> Self {
+    /// * `options` - the [store options](StoreOptions)
+    pub fn new(table: String, pool: Pool<Sqlite>, options: StoreOptions) -> Self {
         Self {
             _id: PhantomData,
             table,
             pool,
-            mask,
-            clock,
-            transcoder,
+            options,
         }
     }
 
@@ -77,8 +65,9 @@ where
         predicate: Option<&Predicate>,
     ) -> Result<Option<Saved<Box<dyn Snapshot>>>, SnapshotError> {
         if let Some(descriptor) = self.load_raw(id, predicate).await? {
-            Ok(Some(Saved::versioned(
-                self.transcoder
+            Ok(Some(Saved::new(
+                self.options
+                    .transcoder()
                     .decode(&descriptor.schema, &descriptor.content)?,
                 descriptor.version,
             )))
@@ -98,7 +87,7 @@ where
         const CONTENT: usize = 3;
 
         let mut db = self.pool.acquire().await.box_err()?;
-        let mut query = command::select(&self.table(), id, predicate, self.mask.clone());
+        let mut query = command::select(&self.table(), id, predicate, self.options.mask());
         let mut rows = query.build().fetch(&mut *db);
 
         if let Some(result) = rows.next().await {
@@ -107,7 +96,7 @@ where
             let mut version = new_version(row.get::<i32, _>(VERSION), 0);
             let content = row.get::<&[u8], _>(CONTENT);
 
-            if let Some(mask) = &self.mask {
+            if let Some(mask) = self.options.mask() {
                 version = version.mask(mask);
             }
 
@@ -126,7 +115,7 @@ where
         snapshot: Box<dyn Snapshot>,
     ) -> Result<(), SnapshotError> {
         if version != Default::default()
-            && let Some(mask) = &self.mask
+            && let Some(mask) = self.options.mask()
         {
             version = version.unmask(mask);
         }
@@ -135,9 +124,9 @@ where
             return Err(SnapshotError::InvalidVersion);
         }
 
-        let stored_on = crate::to_secs(self.clock.now());
+        let stored_on = crate::to_secs(self.options.clock().now());
         let schema = snapshot.schema();
-        let content = self.transcoder.encode(snapshot.as_ref())?;
+        let content = self.options.transcoder().encode(snapshot.as_ref())?;
         let row = sql::Row::<ID> {
             id: id.clone(),
             version: version.number(),
@@ -162,7 +151,7 @@ where
         let table = self.table();
 
         if let Some(retention) = retention {
-            let mut delete = Sqlite::prune(&table, id, &*self.clock, retention);
+            let mut delete = Sqlite::prune(&table, id, self.options.clock(), retention);
             let _ = delete.build().execute(&mut *tx).await.box_err()?;
         } else {
             let mut delete = sql::command::delete(&table, id);

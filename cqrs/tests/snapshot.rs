@@ -7,9 +7,9 @@ use common::{
 };
 use cqrs::{
     Aggregate, Repository, VirtualClock,
-    event::Store,
+    event::{self, Store},
     in_memory::{EventStore, SnapshotStore},
-    snapshot::{self, Store as _},
+    snapshot,
 };
 use std::sync::Arc;
 
@@ -44,12 +44,18 @@ fn account_should_create_snapshot_via_trait() {
 async fn account_should_replay_all_history_with_snapshot() -> TestResult {
     // arrange
     let clock = VirtualClock::new();
-    let snapshots = Arc::new(SnapshotStore::<String>::new(domain::transcoder::snapshots()));
-    let events = EventStore::<String>::with_snapshots(
-        clock,
-        domain::transcoder::events(),
-        snapshots.clone(),
-    );
+    let snapshots: Arc<dyn snapshot::Store<String>> = Arc::new(SnapshotStore::new(
+        snapshot::StoreOptions::builder()
+            .clock(clock.clone())
+            .transcoder(domain::transcoder::snapshots())
+            .build(),
+    ));
+    let options = event::StoreOptions::builder()
+        .clock(clock)
+        .transcoder(domain::transcoder::events())
+        .snapshots(snapshots.clone())
+        .build();
+    let events = EventStore::<String>::new(options);
     let repository = Repository::new(events);
     let id = String::from("42");
     let mut account = Account::open(id.clone());
@@ -61,7 +67,10 @@ async fn account_should_replay_all_history_with_snapshot() -> TestResult {
     repository.save(&mut account).await.box_err()?;
 
     if let Some(snapshot) = account.snapshot() {
-        snapshots.save(account.id(), account.version(), snapshot).await.box_err()?;
+        snapshots
+            .save(account.id(), account.version(), snapshot)
+            .await
+            .box_err()?;
     }
 
     account.credit(25.0);
@@ -79,12 +88,18 @@ async fn account_should_replay_all_history_with_snapshot() -> TestResult {
 async fn account_should_replay_all_history_with_snapshot_from_projector() -> TestResult {
     // arrange
     let clock = VirtualClock::new();
-    let snapshots = Arc::new(SnapshotStore::<String>::new(domain::transcoder::snapshots()));
-    let events: Arc<dyn Store<String>> = Arc::new(EventStore::<String>::with_snapshots(
-        clock,
-        domain::transcoder::events(),
-        snapshots.clone(),
+    let snapshots: Arc<dyn snapshot::Store<String>> = Arc::new(SnapshotStore::new(
+        snapshot::StoreOptions::builder()
+            .clock(clock.clone())
+            .transcoder(domain::transcoder::snapshots())
+            .build(),
     ));
+    let options = event::StoreOptions::builder()
+        .clock(clock)
+        .transcoder(domain::transcoder::events())
+        .snapshots(snapshots.clone())
+        .build();
+    let events: Arc<dyn Store<String>> = Arc::new(EventStore::<String>::new(options));
     let repository = Repository::from(events.clone());
     let mut projector = StatementGenerator::new(events);
     let id = String::from("42");
@@ -158,7 +173,10 @@ async fn account_should_replay_all_history_with_snapshot_using_di() -> TestResul
     repository.save(&mut account).await.box_err()?;
 
     if let Some(snapshot) = account.snapshot() {
-        snapshots.save(account.id(), account.version(), snapshot).await.box_err()?;
+        snapshots
+            .save(account.id(), account.version(), snapshot)
+            .await
+            .box_err()?;
     }
 
     account.credit(25.0);

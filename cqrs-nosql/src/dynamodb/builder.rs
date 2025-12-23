@@ -3,10 +3,10 @@ use super::{EventStore, SnapshotStore};
 use aws_config::SdkConfig;
 use aws_sdk_dynamodb::Client;
 use cqrs::{
-    event::{Delete, Event},
+    Clock, Concurrency, Mask, WallClock,
+    event::{Delete, Event, StoreOptions as EventStoreOptions},
     message::{Message, Transcoder},
-    snapshot::Snapshot,
-    Clock, Mask, WallClock,
+    snapshot::{Snapshot, StoreOptions as SnapshotStoreOptions},
 };
 use futures::executor;
 use std::sync::Arc;
@@ -27,6 +27,7 @@ pub struct Builder<ID, M: Message + ?Sized> {
     table: Option<&'static str>,
     config: Option<SdkConfig>,
     client: Option<Client>,
+    concurrency: Concurrency,
     delete: Delete,
     mask: Option<Arc<dyn Mask>>,
     clock: Option<Arc<dyn Clock>>,
@@ -40,6 +41,7 @@ impl<ID, M: Message + ?Sized> Default for Builder<ID, M> {
             table: Default::default(),
             config: Default::default(),
             client: Default::default(),
+            concurrency: Default::default(),
             delete: Default::default(),
             mask: Default::default(),
             clock: Default::default(),
@@ -126,9 +128,13 @@ impl<ID, M: Message + ?Sized> Builder<ID, M> {
             let config = if let Some(config) = self.config.take() {
                 config
             } else {
-                use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
+                use aws_config::{BehaviorVersion, meta::region::RegionProviderChain};
                 let region = RegionProviderChain::default_provider();
-                executor::block_on(aws_config::defaults(BehaviorVersion::latest()).region(region).load())
+                executor::block_on(
+                    aws_config::defaults(BehaviorVersion::latest())
+                        .region(region)
+                        .load(),
+                )
             };
 
             Ok(Client::new(&config))
@@ -137,6 +143,12 @@ impl<ID, M: Message + ?Sized> Builder<ID, M> {
 }
 
 impl<ID> Builder<ID, dyn Event> {
+    /// Enforces concurrency, which not enforced by default.
+    pub fn enforce_concurrency(mut self) -> Self {
+        self.enforce_concurrency = true;
+        self
+    }
+
     /// Configures the store to support deletes.
     pub fn with_deletes(mut self) -> Self {
         self.delete = Delete::Supported;
@@ -157,16 +169,16 @@ impl<ID> Builder<ID, dyn Event> {
     pub fn build(mut self) -> Result<EventStore<ID>, BuilderError> {
         let client = self.resolve_client()?;
         let table = format!("{}_Events", self.table.ok_or(MissingTable)?);
-
-        Ok(EventStore::new(
-            client,
-            table,
+        let options = EventStoreOptions::<ID>::new(
+            self.concurrency,
+            self.delete,
             self.mask,
             self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
             self.transcoder.unwrap_or_default(),
             self.snapshots,
-            self.delete,
-        ))
+        );
+
+        Ok(EventStore::new(client, table, options))
     }
 }
 
@@ -175,13 +187,12 @@ impl<ID> Builder<ID, dyn Snapshot> {
     pub fn build(mut self) -> Result<SnapshotStore<ID>, BuilderError> {
         let client = self.resolve_client()?;
         let table = format!("{}_Snapshots", self.table.ok_or(MissingTable)?);
-
-        Ok(SnapshotStore::new(
-            client,
-            table,
+        let options = SnapshotStoreOptions::new(
             self.mask,
             self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
             self.transcoder.unwrap_or_default(),
-        ))
+        );
+
+        Ok(SnapshotStore::new(client, table, options))
     }
 }

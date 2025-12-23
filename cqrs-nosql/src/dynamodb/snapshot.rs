@@ -9,7 +9,7 @@ use aws_sdk_dynamodb::{
 use cqrs::{
     Clock, Mask, Version,
     message::{Descriptor, Saved, Schema, Transcoder},
-    snapshot::{Predicate, Retention, Snapshot, SnapshotError, Store},
+    snapshot::{Predicate, Retention, Snapshot, SnapshotError, Store, StoreOptions},
 };
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
@@ -18,9 +18,7 @@ pub struct SnapshotStore<T> {
     _id: PhantomData<T>,
     ddb: Client,
     table: String,
-    mask: Option<Arc<dyn Mask>>,
-    clock: Arc<dyn Clock>,
-    transcoder: Arc<Transcoder<dyn Snapshot>>,
+    options: StoreOptions,
 }
 
 impl<T> SnapshotStore<T> {
@@ -30,23 +28,13 @@ impl<T> SnapshotStore<T> {
     ///
     /// * `client` - the underlying [client](Client)
     /// * `table` - the table identifier
-    /// * `mask` - the [mask](Mask) used to obfuscate [versions](cqrs::Version)
-    /// * `clock` - the associated [clock](Clock)
-    /// * `transcoder` - the associated [transcoder](Transcoder)
-    pub fn new(
-        client: Client,
-        table: String,
-        mask: Option<Arc<dyn Mask>>,
-        clock: Arc<dyn Clock>,
-        transcoder: Arc<Transcoder<dyn Snapshot>>,
-    ) -> Self {
+    /// * `options` - the [store options](StoreOptions)
+    pub fn new(client: Client, table: String, options: StoreOptions) -> Self {
         Self {
             _id: PhantomData,
             ddb: client,
             table,
-            mask,
-            clock,
-            transcoder,
+            options,
         }
     }
 
@@ -67,8 +55,8 @@ where
         predicate: Option<&Predicate>,
     ) -> Result<Option<Saved<Box<dyn Snapshot>>>, SnapshotError> {
         if let Some(descriptor) = self.load_raw(id, predicate).await? {
-            Ok(Some(Saved::versioned(
-                self.transcoder
+            Ok(Some(Saved::new(
+                self.options.transcoder()
                     .decode(&descriptor.schema, &descriptor.content)?,
                 descriptor.version,
             )))
@@ -92,7 +80,7 @@ where
 
         if let Some(predicate) = predicate {
             if let Some((mut version, op)) = greater_than(&predicate.min_version) {
-                if let Some(mask) = &self.mask {
+                if let Some(mask) = self.options.mask() {
                     version = version.unmask(mask);
                 }
 
@@ -137,7 +125,7 @@ where
                 &empty
             };
 
-            if let Some(mask) = &self.mask {
+            if let Some(mask) = self.options.mask() {
                 version = version.mask(mask);
             }
 
@@ -156,7 +144,7 @@ where
         snapshot: Box<dyn Snapshot>,
     ) -> Result<(), SnapshotError> {
         if version != Default::default()
-            && let Some(mask) = &self.mask
+            && let Some(mask) = self.options.mask()
         {
             version = version.unmask(mask);
         }
@@ -165,9 +153,9 @@ where
             return Err(SnapshotError::InvalidVersion);
         }
 
-        let stored_on = crate::to_secs(self.clock.now());
+        let stored_on = crate::to_secs(self.options.clock().now());
         let schema = snapshot.schema();
-        let content = self.transcoder.encode(snapshot.as_ref())?;
+        let content = self.options.transcoder().encode(snapshot.as_ref())?;
         let request = self
             .ddb
             .put_item()

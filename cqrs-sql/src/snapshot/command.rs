@@ -1,17 +1,17 @@
 use super::Upsert;
 use crate::{
-    sql::{self, greater_than},
     SqlVersion,
+    sql::{self, greater_than},
 };
-use cqrs::{snapshot::Predicate, Mask};
+use cqrs::{Mask, snapshot::Predicate};
 use sqlx::{Database, Encode, QueryBuilder, Type};
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
 
 pub fn select<'a, ID, DB>(
     table: &sql::Ident<'a>,
     id: &'a ID,
     predicate: Option<&Predicate>,
-    mask: Option<Arc<dyn Mask>>,
+    mask: Option<&(dyn Mask + 'static)>,
 ) -> QueryBuilder<'a, DB>
 where
     ID: Debug + Encode<'a, DB> + Send + Type<DB> + 'a,
@@ -29,7 +29,7 @@ where
 
     if let Some(predicate) = predicate {
         if let Some((mut version, op)) = greater_than(&predicate.min_version) {
-            if let Some(mask) = &mask {
+            if let Some(mask) = mask {
                 version = version.unmask(mask);
             }
 

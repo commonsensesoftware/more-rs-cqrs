@@ -28,6 +28,12 @@ pub trait Mask: Send + Sync {
     fn unmask(&self, data: [u8; 8]) -> [u8; 8];
 }
 
+impl<'a> AsRef<dyn Mask + 'a> for dyn Mask + 'a {
+    fn as_ref(&self) -> &(dyn Mask + 'a) {
+        self
+    }
+}
+
 /* REMARKS
  * An entity version is a binary-encoded 64-bit value that is only meant to be known to the storage that provided
  * it and is opaque to all consumers; however, if you know or discover the algorithm used by the storage provider,
@@ -121,8 +127,8 @@ impl Mask for SecureMask {
     }
 }
 
-impl AsRef<dyn Mask> for SecureMask {
-    fn as_ref(&self) -> &(dyn Mask + 'static) {
+impl<'a> AsRef<dyn Mask + 'a> for SecureMask {
+    fn as_ref(&self) -> &(dyn Mask + 'a) {
         self
     }
 }

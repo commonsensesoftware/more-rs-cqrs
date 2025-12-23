@@ -13,16 +13,15 @@ use cqrs::{
 use std::{
     fmt::Debug,
     ops::Bound::{self, *},
-    sync::Arc,
 };
 
 pub(crate) fn select_version<T: Debug + Send>(
     snapshot: Option<&Descriptor>,
     predicate: &Predicate<'_, T>,
-    mask: Option<Arc<dyn Mask>>,
+    mask: Option<&(dyn Mask + 'static)>,
 ) -> Bound<i32> {
     if let Some(snapshot) = snapshot {
-        let version = if let Some(mask) = &mask {
+        let version = if let Some(mask) = mask {
             snapshot.version.unmask(mask).number()
         } else {
             snapshot.version.number()
@@ -30,7 +29,7 @@ pub(crate) fn select_version<T: Debug + Send>(
 
         match predicate.version {
             Included(other) => {
-                let other = if let Some(mask) = &mask {
+                let other = if let Some(mask) = mask {
                     other.unmask(mask).number()
                 } else {
                     other.number()
@@ -41,7 +40,7 @@ pub(crate) fn select_version<T: Debug + Send>(
                 }
             }
             Excluded(other) => {
-                let other = if let Some(mask) = &mask {
+                let other = if let Some(mask) = mask {
                     other.unmask(mask).number()
                 } else {
                     other.number()

@@ -2,12 +2,12 @@ use self::SqlStoreBuilderError::*;
 use crate::{event, snapshot, sql::Ident};
 use cfg_if::cfg_if;
 use cqrs::{
-    event::{Delete, Event},
+    Clock, Concurrency, Mask, WallClock,
+    event::{Delete, Event, StoreOptions as EventStoreOptions},
     message::{Message, Transcoder},
-    snapshot::Snapshot,
-    Clock, Mask, WallClock,
+    snapshot::{Snapshot, StoreOptions as SnapshotStoreOptions},
 };
-use sqlx::{pool::PoolOptions, Database};
+use sqlx::{Database, pool::PoolOptions};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -37,6 +37,7 @@ where
 {
     schema: &'static str,
     table: Option<&'static str>,
+    concurrency: Concurrency,
     delete: Delete,
     pub(crate) url: Option<String>,
     pub(crate) options: Option<PoolOptions<DB>>,
@@ -54,6 +55,7 @@ impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Event, DB> {
         Self {
             schema: "events",
             table: None,
+            concurrency: Default::default(),
             delete: Default::default(),
             url: None,
             options: None,
@@ -73,6 +75,7 @@ impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Snapshot, DB> {
         Self {
             schema: "snapshots",
             table: None,
+            concurrency: Concurrency::None,
             delete: Default::default(),
             url: None,
             options: None,
@@ -175,6 +178,12 @@ where
 }
 
 impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Event, DB> {
+    /// Configures the store to enforce concurrency.
+    pub fn enforce_concurrency(mut self) -> Self {
+        self.concurrency = Concurrency::Enforced;
+        self
+    }
+
     /// Configures the store to support deletes.
     pub fn with_deletes(mut self) -> Self {
         self.delete = Delete::Supported;
@@ -194,22 +203,26 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Event, DB> {
     /// Builds and returns a new [event store](event::SqlStore).
     pub fn build(self) -> Result<event::SqlStore<ID, DB>, SqlStoreBuilderError> {
         let url = self.url.ok_or(MissingUrl)?;
-        let options = self.options.unwrap_or_default();
+        let pool = self.options.unwrap_or_default();
         let table = self.table.ok_or(MissingTable)?;
         let table = if self.schema.is_empty() {
             Ident::unqualified(table)
         } else {
             Ident::qualified(self.schema, table)
         };
-
-        Ok(event::SqlStore::new(
-            table,
-            options.connect_lazy(&url)?,
+        let options = EventStoreOptions::<ID>::new(
+            self.concurrency,
+            self.delete,
             self.mask,
             self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
             self.transcoder.unwrap_or_default(),
             self.snapshots,
-            self.delete,
+        );
+
+        Ok(event::SqlStore::new(
+            table,
+            pool.connect_lazy(&url)?,
+            options,
         ))
     }
 }
@@ -218,20 +231,23 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Snapshot, DB> {
     /// Builds and returns a new [snapshot store](snapshot::SqlStore).
     pub fn build(self) -> Result<snapshot::SqlStore<ID, DB>, SqlStoreBuilderError> {
         let url = self.url.ok_or(MissingUrl)?;
-        let options = self.options.unwrap_or_default();
+        let pool = self.options.unwrap_or_default();
         let table = self.table.ok_or(MissingTable)?;
         let table = if self.schema.is_empty() {
             Ident::unqualified(table)
         } else {
             Ident::qualified(self.schema, table)
         };
-
-        Ok(snapshot::SqlStore::new(
-            table,
-            options.connect_lazy(&url)?,
+        let options = SnapshotStoreOptions::new(
             self.mask,
             self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
             self.transcoder.unwrap_or_default(),
+        );
+
+        Ok(snapshot::SqlStore::new(
+            table,
+            pool.connect_lazy(&url)?,
+            options,
         ))
     }
 }
@@ -258,15 +274,19 @@ cfg_if! {
                 } else {
                     format!("{}_{}", value.schema, table)
                 };
-
-                Ok(Self::new(
-                    table,
-                    pool,
+                let options = EventStoreOptions::<ID>::new(
+                    value.concurrency,
+                    value.delete,
                     value.mask,
                     value.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
                     value.transcoder.unwrap_or_default(),
                     value.snapshots,
-                    value.delete,
+                );
+
+                Ok(Self::new(
+                    table,
+                    pool,
+                    options,
                 ))
             }
         }
@@ -289,13 +309,16 @@ cfg_if! {
                 } else {
                     format!("{}_{}", value.schema, table)
                 };
+                let options = SnapshotStoreOptions::new(
+                    value.mask,
+                    value.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
+                    value.transcoder.unwrap_or_default()
+                );
 
                 Ok(Self::new(
                     table,
                     pool,
-                    value.mask,
-                    value.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
-                    value.transcoder.unwrap_or_default(),
+                    options,
                 ))
             }
         }

@@ -61,6 +61,7 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
                 .with()
                 .config(config)
                 .mask(SecureMask::ephemeral())
+                .enforce_concurrency()
                 .migrations();
         })
         .build_provider()
