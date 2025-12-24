@@ -21,18 +21,16 @@ use aws_sdk_dynamodb::{
 use cqrs::{
     Clock, Mask, Range, Version,
     event::{
-        Delete, Event, EventStream, IdStream, Predicate, PredicateBuilder, Store, StoreError,
-        StoreOptions,
+        Event, EventStream, IdStream, Predicate, PredicateBuilder, Store, StoreError, StoreOptions,
     },
-    message::{Saved, Schema, Transcoder},
-    snapshot,
+    message::{Saved, Schema},
 };
 use std::{error::Error, fmt::Debug, str::FromStr, sync::Arc, time::SystemTime};
 
 fn apply_predicate<T>(
     mut request: QueryFluentBuilder,
     predicate: Option<&Predicate<T>>,
-    mask: Option<Arc<dyn Mask>>,
+    mask: Option<&(dyn Mask + 'static)>,
 ) -> QueryFluentBuilder
 where
     T: Debug + Send + ToString,
@@ -134,13 +132,13 @@ where
 }
 
 /// Represents an Amazon DynamoDB [event store](Store).
-pub struct EventStore<T> {
+pub struct EventStore<ID> {
     ddb: Client,
     table: String,
     options: StoreOptions<ID>,
 }
 
-impl<T> EventStore<T> {
+impl<ID> EventStore<ID> {
     /// Initializes a new [EventStore].
     ///
     /// # Arguments
@@ -157,22 +155,22 @@ impl<T> EventStore<T> {
     }
 
     /// Creates and returns a new [Builder].
-    pub fn builder() -> Builder<T, dyn Event> {
+    pub fn builder() -> Builder<ID, dyn Event> {
         Builder::default()
     }
 }
 
-impl<T> EventStore<T>
+impl<ID> EventStore<ID>
 where
-    T: Clone + Debug + Send + Sync + ToString + 'static,
+    ID: Clone + Debug + Send + Sync + ToString + 'static,
 {
     #[allow(clippy::borrowed_box)]
     async fn write_one(
         &self,
-        id: &T,
+        id: &ID,
         version: Version,
         event: &Box<dyn Event>,
-    ) -> Result<Version, StoreError<T>> {
+    ) -> Result<Version, StoreError<ID>> {
         let stored_on = crate::to_secs(self.options.clock().now());
         let schema = event.schema();
         let content = self.options.transcoder().encode(event.as_ref())?;
@@ -280,10 +278,10 @@ where
 
     async fn write_all(
         &self,
-        id: &T,
+        id: &ID,
         mut version: Version,
         events: &[Box<dyn Event>],
-    ) -> Result<Version, StoreError<T>> {
+    ) -> Result<Version, StoreError<ID>> {
         let stored_on = crate::to_secs(self.options.clock().now());
         let mut request = self.ddb.transact_write_items();
 
@@ -435,7 +433,7 @@ where
         events: &[Box<dyn Event>],
     ) -> Result<Version, StoreError<T>> {
         if events.is_empty() {
-            return Ok(None);
+            return Ok(expected_version);
         }
 
         let mut version = if expected_version != Version::default()
@@ -454,16 +452,16 @@ where
             version = version.increment(ByOne);
 
             let result = if events.len() == 1 {
-                self.write_one(id, version, &events[0]).await?
+                self.write_one(id, version, &events[0]).await
             } else {
-                self.write_all(id, version, events).await?
+                self.write_all(id, version, events).await
             };
 
             match result {
                 Ok(current) => {
                     version = current;
                     break;
-                },
+                }
                 Err(error) => {
                     if matches!(error, StoreError::Conflict(_, _))
                         && !self.options.concurrency().enforced()

@@ -145,7 +145,7 @@ impl<ID, M: Message + ?Sized> Builder<ID, M> {
 impl<ID> Builder<ID, dyn Event> {
     /// Enforces concurrency, which not enforced by default.
     pub fn enforce_concurrency(mut self) -> Self {
-        self.enforce_concurrency = true;
+        self.concurrency = Concurrency::Enforced;
         self
     }
 

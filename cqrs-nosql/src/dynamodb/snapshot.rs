@@ -7,11 +7,11 @@ use aws_sdk_dynamodb::{
     types::AttributeValue::{self, B, N, S},
 };
 use cqrs::{
-    Clock, Mask, Version,
-    message::{Descriptor, Saved, Schema, Transcoder},
+    Version,
+    message::{Descriptor, Saved, Schema},
     snapshot::{Predicate, Retention, Snapshot, SnapshotError, Store, StoreOptions},
 };
-use std::{fmt::Debug, marker::PhantomData, sync::Arc};
+use std::{fmt::Debug, marker::PhantomData};
 
 /// Represents an Amazon DynamoDB [snapshot store](Store).
 pub struct SnapshotStore<T> {
@@ -56,7 +56,8 @@ where
     ) -> Result<Option<Saved<Box<dyn Snapshot>>>, SnapshotError> {
         if let Some(descriptor) = self.load_raw(id, predicate).await? {
             Ok(Some(Saved::new(
-                self.options.transcoder()
+                self.options
+                    .transcoder()
                     .decode(&descriptor.schema, &descriptor.content)?,
                 descriptor.version,
             )))
