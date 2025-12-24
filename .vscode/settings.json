@@ -1,0 +1,30 @@
+{
+    "debug.allowBreakpointsEverywhere": true,
+    "rust-analyzer.cargo.features": "all",
+    "cSpell.words": [
+        "BYTEA",
+        "cbor",
+        "CBOR",
+        "cqrs",
+        "devcontainers",
+        "dynosaur",
+        "ghaction",
+        "Hasher",
+        "nanos",
+        "prost",
+        "Proto",
+        "protobuf",
+        "rsplit",
+        "rstest",
+        "savepoints",
+        "serde",
+        "sqlx",
+        "testcontainers",
+        "TINYINT",
+        "tombstoned",
+        "transcoders",
+        "versionless",
+        "thiserror"
+    ],
+    "rust-analyzer.testExplorer": true
+}
