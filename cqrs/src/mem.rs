@@ -231,7 +231,7 @@ impl<ID: Clone + Debug + Eq + Hash + Send + Sync> EventStore<ID> {
         &self,
         predicate: Option<&Predicate<'_, ID>>,
     ) -> Result<Option<Descriptor>, SnapshotError> {
-        if let Some(snapshots) = self.options.snapshots().as_deref()
+        if let Some(snapshots) = self.options.snapshots()
             && let Some(predicate) = predicate
             && predicate.load.snapshots
             && let Some(id) = predicate.id

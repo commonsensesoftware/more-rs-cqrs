@@ -56,8 +56,8 @@ pub(crate) fn select_version<T: Debug + Send>(
         Excluded(version)
     } else if let Some(mask) = mask {
         match predicate.version {
-            Included(version) => Included(version.unmask(&mask).number()),
-            Excluded(version) => Excluded(version.unmask(&mask).number()),
+            Included(version) => Included(version.unmask(mask).number()),
+            Excluded(version) => Excluded(version.unmask(mask).number()),
             _ => Unbounded,
         }
     } else {

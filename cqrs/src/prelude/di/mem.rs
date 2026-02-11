@@ -117,18 +117,15 @@ where
                     } else {
                         Delete::Unsupported
                     };
-                    let snapshots =
-                        if let Some(snapshots) = sp.get_by_key::<A, dyn snapshot::Store<A::ID>>() {
-                            Some(Ref::<dyn snapshot::Store<A::ID>>::from(snapshots))
-                        } else {
-                            None
-                        };
+                    let snapshots = sp
+                        .get_by_key::<A, dyn snapshot::Store<A::ID>>()
+                        .map(Ref::<dyn snapshot::Store<A::ID>>::from);
                     let options = event::StoreOptions::<A::ID>::new(
                         concurrency,
                         delete,
                         mask.clone().or_else(|| sp.get::<dyn Mask>()),
                         sp.get::<dyn Clock>()
-                            .unwrap_or_else(|| Arc::new(WallClock::default())),
+                            .unwrap_or_else(|| Arc::new(WallClock)),
                         sp.get_required::<Transcoder<dyn Event>>(),
                         snapshots,
                     );
@@ -170,7 +167,7 @@ where
                     let options = snapshot::StoreOptions::new(
                         mask.clone().or_else(|| sp.get::<dyn Mask>()),
                         sp.get::<dyn Clock>()
-                            .unwrap_or_else(|| Arc::new(WallClock::default())),
+                            .unwrap_or_else(|| Arc::new(WallClock)),
                         sp.get_required::<Transcoder<dyn Snapshot>>(),
                     );
 
