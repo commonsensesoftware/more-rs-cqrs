@@ -6,6 +6,9 @@ pub use version::{NoSqlVersion, NoSqlVersionPart};
 /// Provides storage using Amazon DynamoDB.
 pub mod dynamodb;
 
+/// Contains library prelude.
+pub mod prelude;
+
 use std::{
     error::Error,
     time::{SystemTime, UNIX_EPOCH},

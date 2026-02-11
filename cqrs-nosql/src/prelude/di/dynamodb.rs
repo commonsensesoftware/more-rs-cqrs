@@ -209,6 +209,12 @@ where
         self
     }
 
+    /// Enforces concurrency, which not enforced by default.
+    pub fn enforce_concurrency(mut self) -> Self {
+        self.enforce_concurrency = true;
+        self
+    }
+
     // Enables support for deletes, which is unsupported by default.
     pub fn deletes(mut self) -> Self {
         self.allow_delete = true;
@@ -281,6 +287,7 @@ where
         let config;
         let client = self.client.clone();
         let mask = self.mask.take().map(Arc::from);
+        let enforce_concurrency = self.enforce_concurrency;
         let allow_delete = self.allow_delete;
 
         if client.is_some() {
