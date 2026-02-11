@@ -187,8 +187,6 @@ where
 pub fn insert<'a, ID, DB>(table: &'a sql::Ident<'a>, row: &'a sql::Row<ID>) -> QueryBuilder<'a, DB>
 where
     DB: Database,
-    // for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
-    // for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     ID: Encode<'a, DB> + Send + Type<DB> + 'a,
     i16: for<'db> Encode<'db, DB> + Type<DB>,
     i32: for<'db> Encode<'db, DB> + Type<DB>,
