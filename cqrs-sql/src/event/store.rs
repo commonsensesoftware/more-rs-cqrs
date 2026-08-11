@@ -58,7 +58,7 @@ where
         + Type<DB>
         + 'static,
     DB: Database,
-    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
+    <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
     i32: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,

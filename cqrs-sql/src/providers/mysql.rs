@@ -23,7 +23,7 @@ where
         id: &'a ID,
         clock: &'a dyn Clock,
         retention: &'a Retention,
-    ) -> sqlx::QueryBuilder<'a, MySql> {
+    ) -> sqlx::QueryBuilder<MySql> {
         let mut delete = QueryBuilder::new("WITH s2 AS (");
 
         delete

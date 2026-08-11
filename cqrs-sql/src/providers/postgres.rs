@@ -23,7 +23,7 @@ where
         id: &'a ID,
         clock: &'a dyn Clock,
         retention: &'a Retention,
-    ) -> sqlx::QueryBuilder<'a, Postgres> {
+    ) -> sqlx::QueryBuilder<Postgres> {
         let mut delete = QueryBuilder::new("WITH s2 AS (");
 
         delete

@@ -33,10 +33,9 @@ where
         builder = builder.url(url);
     } else if let Some(snapshot) = di_options
         && let Ok(db) = snapshot.get_named(name)
+        && !db.url.is_empty()
     {
-        if !db.url.is_empty() {
-            builder = builder.url(db.url.clone());
-        }
+        builder = builder.url(db.url.clone());
     }
 
     builder

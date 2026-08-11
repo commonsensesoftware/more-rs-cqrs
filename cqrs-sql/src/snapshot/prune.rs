@@ -17,5 +17,5 @@ pub trait Prune<'a, ID, DB: Database> {
         id: &'a ID,
         clock: &'a dyn Clock,
         retention: &'a Retention,
-    ) -> QueryBuilder<'a, DB>;
+    ) -> QueryBuilder<DB>;
 }

@@ -1,7 +1,7 @@
 use super::Ident;
 use sqlx::{Database, Encode, QueryBuilder, Type};
 
-pub fn delete<'a, ID, DB>(table: &'a Ident<'a>, id: &'a ID) -> QueryBuilder<'a, DB>
+pub fn delete<'a, ID, DB>(table: &'a Ident<'a>, id: &'a ID) -> QueryBuilder<DB>
 where
     DB: Database,
     ID: Encode<'a, DB> + Send + Type<DB> + 'a,

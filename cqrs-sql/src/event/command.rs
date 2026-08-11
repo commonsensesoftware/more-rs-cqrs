@@ -7,7 +7,7 @@ use sqlx::{Database, Encode, Executor, FromRow, IntoArguments, QueryBuilder, Tra
 use std::{error::Error, fmt::Debug, ops::Bound, time::SystemTime};
 
 #[inline]
-fn and_stored_on<'a, D>(builder: &mut QueryBuilder<'a, D>, (time, op): (SystemTime, &str))
+fn and_stored_on<'a, D>(builder: &mut QueryBuilder<D>, (time, op): (SystemTime, &str))
 where
     D: Database,
     i64: Encode<'a, D> + Type<D>,
@@ -19,10 +19,7 @@ where
         .push_bind(crate::to_secs(time));
 }
 
-pub fn select_id<'a, DB>(
-    table: sql::Ident<'a>,
-    stored_on: Range<SystemTime>,
-) -> QueryBuilder<'a, DB>
+pub fn select_id<'a, DB>(table: sql::Ident<'a>, stored_on: Range<SystemTime>) -> QueryBuilder<DB>
 where
     DB: Database,
     i64: Encode<'a, DB> + Type<DB>,
@@ -58,7 +55,7 @@ pub fn select<'a, ID, DB>(
     table: sql::Ident<'a>,
     predicate: Option<&'a Predicate<'a, ID>>,
     version: Bound<i32>,
-) -> QueryBuilder<'a, DB>
+) -> QueryBuilder<DB>
 where
     ID: Debug + Encode<'a, DB> + Send + Type<DB> + 'a,
     DB: Database,
@@ -67,7 +64,7 @@ where
     i64: Encode<'a, DB> + Type<DB>,
     String: Encode<'a, DB> + Type<DB>,
 {
-    fn add_where<D: Database>(builder: &mut QueryBuilder<'_, D>, added: &mut bool) {
+    fn add_where<D: Database>(builder: &mut QueryBuilder<D>, added: &mut bool) {
         if *added {
             builder.push(" AND ");
         } else {
@@ -160,10 +157,7 @@ where
     select
 }
 
-pub fn exists<'a, ID, DB>(
-    table: &'a sql::Ident<'a>,
-    previous: &'a sql::Row<ID>,
-) -> QueryBuilder<'a, DB>
+pub fn exists<'a, ID, DB>(table: &'a sql::Ident<'a>, previous: &'a sql::Row<ID>) -> QueryBuilder<DB>
 where
     DB: Database,
     ID: Clone + Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
@@ -184,7 +178,7 @@ where
     select
 }
 
-pub fn insert<'a, ID, DB>(table: &'a sql::Ident<'a>, row: &'a sql::Row<ID>) -> QueryBuilder<'a, DB>
+pub fn insert<'a, ID, DB>(table: &'a sql::Ident<'a>, row: &'a sql::Row<ID>) -> QueryBuilder<DB>
 where
     DB: Database,
     ID: Encode<'a, DB> + Send + Type<DB> + 'a,
@@ -232,7 +226,7 @@ pub async fn insert_transacted<'a, ID, DB>(
 ) -> Result<(), StoreError<ID>>
 where
     DB: Database,
-    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
+    <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     ID: Clone + Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
     i16: for<'db> Encode<'db, DB> + Type<DB>,
@@ -263,7 +257,7 @@ pub async fn ensure_not_deleted<'a, ID, DB>(
 ) -> Result<(), StoreError<ID>>
 where
     DB: Database,
-    for<'args, 'db> <DB as Database>::Arguments<'args>: IntoArguments<'db, DB>,
+    <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     ID: Clone + Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
     i32: for<'db> Encode<'db, DB> + Type<DB>,

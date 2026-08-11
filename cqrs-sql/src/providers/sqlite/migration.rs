@@ -2,7 +2,7 @@ use crate::SqlStoreMigrator;
 use crate::{sqlite, sql::Ident};
 use sqlx::{
     migrate::{Migration, MigrationType::Simple},
-    Sqlite,
+    AssertSqlSafe, Sqlite, SqlSafeStr,
 };
 use std::any::type_name;
 use std::borrow::Cow;
@@ -16,7 +16,7 @@ impl<ID> From<&sqlite::EventStore<ID>> for Migration {
             1,
             Cow::Owned(format!("'{}' events table.", value.table().name())),
             Simple,
-            Cow::Owned(events_table(&value.table(), db_type::<ID>())),
+            AssertSqlSafe(events_table(&value.table(), db_type::<ID>())).into_sql_str(),
             false,
         )
     }
@@ -28,7 +28,7 @@ impl<ID> From<&sqlite::SnapshotStore<ID>> for Migration {
             1,
             Cow::Owned(format!("'{}' snapshots table.", value.table().name())),
             Simple,
-            Cow::Owned(snapshots_table(&value.table(), db_type::<ID>())),
+            AssertSqlSafe(snapshots_table(&value.table(), db_type::<ID>())).into_sql_str(),
             false,
         )
     }
