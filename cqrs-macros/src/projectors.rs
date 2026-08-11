@@ -107,6 +107,7 @@ impl<'a> Projector<'a> {
             Cow::Owned(Type::Path(TypePath {
                 qself: None,
                 path: path.clone(),
+                attrs: Vec::new(),
             }))
         } else {
             match_store_field(self.store().1)
@@ -116,6 +117,7 @@ impl<'a> Projector<'a> {
                         Cow::Owned(Type::Path(TypePath {
                             qself: None,
                             path: parse_str::<Path>("uuid::Uuid").unwrap(),
+                            attrs: Vec::new(),
                         }))
                     },
                     Cow::Borrowed,
@@ -367,7 +369,7 @@ fn get_projectors(items: &[Item], metadata: Vec<Metadata>) -> Result<Vec<Project
 fn get_receivers(items: &[Item]) -> impl Iterator<Item = (&Ident, &Type)> {
     items.iter().filter_map(|item| {
         if let Item::Impl(block) = item
-            && let Some((_, path, _)) = &block.trait_
+            && let Some((path, _)) = &block.trait_
             && let Some(segment) = path.segments.last()
             && segment.ident == Ident::new("Receiver", segment.span())
             && let PathArguments::AngleBracketed(generic) = &segment.arguments

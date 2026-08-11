@@ -1,5 +1,5 @@
 use rc2::{
-    cipher::{generic_array::GenericArray, BlockDecrypt, BlockEncrypt, InvalidLength},
+    cipher::{Array, BlockCipherDecrypt, BlockCipherEncrypt, InvalidLength},
     Rc2,
 };
 use uuid::Uuid;
@@ -115,13 +115,13 @@ impl SecureMask {
 
 impl Mask for SecureMask {
     fn mask(&self, data: [u8; 8]) -> [u8; 8] {
-        let mut array: GenericArray<u8, _> = data.into();
+        let mut array  = Array::from(data);
         self.0.encrypt_block(&mut array);
         array.into()
     }
 
     fn unmask(&self, data: [u8; 8]) -> [u8; 8] {
-        let mut array: GenericArray<u8, _> = data.into();
+        let mut array = Array::from(data);
         self.0.decrypt_block(&mut array);
         array.into()
     }

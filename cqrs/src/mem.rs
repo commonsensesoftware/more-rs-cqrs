@@ -129,15 +129,11 @@ impl<T: Clone + Debug + Eq + Hash + Send + Sync> snapshot::Store<T> for Snapshot
         if let Some(row) = table.get(id) {
             if let Some(predicate) = predicate {
                 match predicate.min_version {
-                    Included(version) => {
-                        if row.version >= version {
-                            return Ok(None);
-                        }
+                    Included(version) if row.version >= version => {
+                        return Ok(None);
                     }
-                    Excluded(version) => {
-                        if row.version > version {
-                            return Ok(None);
-                        }
+                    Excluded(version) if row.version > version => {
+                        return Ok(None);
                     }
                     _ => {}
                 }
@@ -288,20 +284,14 @@ fn select_version<T: Debug + Send>(
         }
 
         match predicate.version {
-            Included(other) => {
-                if other >= version {
-                    return Some(other.number() as usize);
-                }
+            Included(other) if other >= version => {
+                Some(other.number() as usize)
             }
-            Excluded(other) => {
-                if other > version {
-                    return Some(other.number() as usize);
-                }
+            Excluded(other) if other > version => {
+                Some(other.number() as usize)
             }
-            _ => {}
+            _ => Some(version.number() as usize)
         }
-
-        Some(version.number() as usize)
     } else {
         match predicate.version {
             Included(version) => Some(version.number() as usize),
