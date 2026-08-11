@@ -29,7 +29,7 @@ fn format_date(date: Option<SystemTime>) -> String {
         } else {
             utc
         };
-        let format = format_description::parse("[month]/[day]/[year] [hour]:[minute]").unwrap();
+        let format = format_description::parse_borrowed::<3>("[month]/[day]/[year] [hour]:[minute]").unwrap();
 
         local.format(&format).unwrap()
     } else {
