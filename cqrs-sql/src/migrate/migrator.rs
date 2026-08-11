@@ -108,8 +108,8 @@ where
     }
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "di")] {
+cfg_select! {
+    feature = "di" => {
         use di::{inject, injectable, Ref};
 
         #[injectable(StoreMigration)]
@@ -140,4 +140,5 @@ cfg_if::cfg_if! {
             }
         }
     }
+    _ => {}
 }

@@ -1,29 +1,31 @@
-use cfg_if::cfg_if;
-
-cfg_if! {
-    if #[cfg(feature = "cbor")] {
+cfg_select! {
+    feature = "cbor" => {
         mod cbor;
         pub use cbor::Cbor;
     }
+    _ => {}
 }
 
-cfg_if! {
-    if #[cfg(feature = "json")] {
+cfg_select! {
+    feature = "json" => {
         mod json;
         pub use json::Json;
     }
+    _ => {}
 }
 
-cfg_if! {
-    if #[cfg(feature = "message-pack")] {
+cfg_select! {
+    feature = "message-pack" => {
         mod message_pack;
         pub use message_pack::MessagePack;
-    }
+    },
+    _ => {},
 }
 
-cfg_if! {
-    if #[cfg(feature = "protobuf")] {
+cfg_select! {
+    feature = "protobuf" => {
         mod protobuf;
         pub use protobuf::{ProtoBuf, Uuid};
     }
+    _ => {}
 }

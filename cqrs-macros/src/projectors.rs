@@ -347,7 +347,7 @@ fn get_projectors(items: &[Item], metadata: Vec<Metadata>) -> Result<Vec<Project
 
             None
         })
-        .zip(metadata.into_iter())
+        .zip(metadata)
         .map(|(item, meta)| Context::new(item, meta))
         .map(Projector::try_from)
         .collect::<Result<Vec<_>>>()?;

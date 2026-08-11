@@ -1,5 +1,4 @@
 use crate::Mask;
-use cfg_if::cfg_if;
 use std::{array::TryFromSliceError, fmt::{self, Debug, Formatter, Result as FormatResult}};
 
 /// Represents an entity version.
@@ -118,8 +117,8 @@ impl TryFrom<Vec<u8>> for Version {
     }
 }
 
-cfg_if! {
-    if #[cfg(feature = "protobuf")] {
+cfg_select! {
+    feature = "protobuf" => {
         use prost::{
             bytes::{Buf, BufMut},
             encoding::{key_len, check_wire_type, encode_key, encoded_len_varint, skip_field, DecodeContext, WireType},
@@ -133,6 +132,9 @@ cfg_if! {
                 buf.put_u64(self.0);
             }
 
+            // there's no other way to construct a DecodeError
+            // REF: https://github.com/tokio-rs/prost/issues/1377
+            #[allow(deprecated)]
             fn merge_field(
                 &mut self,
                 tag: u32,
@@ -169,4 +171,5 @@ cfg_if! {
             }
         }
     }
+    _ => {}
 }

@@ -7,14 +7,14 @@ pub use options::{CqrsOptions, TranscoderOptions};
 use crate::{
     message::{Message, Transcoder}, StoreMigrator, WallClock
 };
-use cfg_if::cfg_if;
 use di::{existing_as_self, Injectable, ServiceCollection};
 
-cfg_if! {
-    if #[cfg(feature = "mem")] {
+cfg_select! {
+    feature = "mem" => {
         mod mem;
         pub use mem::*;
     }
+    _ => {}
 }
 
 fn merge<M: Message + ?Sized>(mut transcoders: Vec<Transcoder<M>>) -> Transcoder<M> {

@@ -5,7 +5,7 @@ use crate::{
 };
 use cqrs::{Aggregate, Clock, event::Event, message::Transcoder};
 use di::{Injectable, Ref, exactly_one, transient_as_self, zero_or_one, zero_or_one_with_key};
-use options::OptionsSnapshot;
+use options::Snapshot;
 use sqlx::{
     ColumnIndex, Database, Decode, Encode, Executor, FromRow, IntoArguments, Type,
     migrate::{Migrate, Migration},
@@ -90,9 +90,9 @@ where
             transient_as_self::<SqlStoreMigration<DB>>()
                 .depends_on(exactly_one::<dyn Clock>())
                 .depends_on(exactly_one::<Transcoder<dyn Event>>())
-                .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<DB>>>())
+                .depends_on(zero_or_one::<dyn Snapshot<SqlOptions<DB>>>())
                 .from(move |sp| {
-                    let di_options = sp.get::<dyn OptionsSnapshot<SqlOptions<DB>>>();
+                    let di_options = sp.get::<dyn Snapshot<SqlOptions<DB>>>();
                     let builder = merge(
                         event::SqlStore::<A::ID, DB>::builder()
                             .table(name)
@@ -124,9 +124,9 @@ where
                 .depends_on(exactly_one::<dyn Clock>())
                 .depends_on(exactly_one::<Transcoder<dyn Event>>())
                 .depends_on(zero_or_one_with_key::<A, DynSnapshotStore<A::ID>>())
-                .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<DB>>>())
+                .depends_on(zero_or_one::<dyn Snapshot<SqlOptions<DB>>>())
                 .from(move |sp| {
-                    let di_options = sp.get::<dyn OptionsSnapshot<SqlOptions<DB>>>();
+                    let di_options = sp.get::<dyn Snapshot<SqlOptions<DB>>>();
                     let builder = merge(
                         event::SqlStore::<A::ID, DB>::builder()
                             .table(name)

@@ -1,7 +1,6 @@
 use crate::dynamodb::{EventStore, SnapshotStore};
 use aws_config::SdkConfig;
 use aws_sdk_dynamodb::Client;
-use cfg_if::cfg_if;
 use cqrs::{
     Aggregate, Clock, Mask, Repository,
     event::{self, Event},
@@ -13,7 +12,7 @@ use di::{
     Ref, ServiceCollection, exactly_one, exactly_one_with_key, singleton_as_self,
     singleton_with_key, zero_or_one, zero_or_one_with_key,
 };
-use options::OptionsSnapshot;
+use options::Snapshot as OptionsSnapshot;
 use std::{any::type_name, marker::PhantomData, str::FromStr, sync::Arc};
 
 /// Represents the Amazon DynamoDB storage configuration extensions.
@@ -108,7 +107,8 @@ where
                     }
 
                     if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>()
-                        && let Some(client) = options.get(Some(table)).as_ref()
+                        && let Ok(option) = options.get_named(table)
+                        && let Some(client) = &*option
                     {
                         builder = builder.client(client.clone());
                     }
@@ -264,7 +264,8 @@ where
                     if let Some(client) = &client {
                         builder = builder.client(client.clone());
                     } else if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>()
-                        && let Some(client) = options.get(Some(table)).as_ref()
+                        && let Ok(option) = options.get_named(table)
+                        && let Some(client) = &*option
                     {
                         builder = builder.client(client.clone());
                     }
@@ -325,7 +326,8 @@ where
                     if let Some(client) = &client {
                         builder = builder.client(client.clone());
                     } else if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>()
-                        && let Some(client) = options.get(Some(table)).as_ref()
+                        && let Ok(option) = options.get_named(table)
+                        && let Some(client) = &*option
                     {
                         builder = builder.client(client.clone());
                     }
@@ -344,8 +346,8 @@ where
     }
 }
 
-cfg_if! {
-    if #[cfg(feature = "migrate")] {
+cfg_select! {
+    feature = "migrate" => {
         use crate::dynamodb::{EventStoreMigration, SnapshotStoreMigration};
         use cqrs::StoreMigration;
         use di::{transient, ServiceProvider};
@@ -360,7 +362,8 @@ cfg_if! {
             if let Some(client) = client {
                 return client.clone();
             } else if let Some(options) = sp.get::<dyn OptionsSnapshot<Option<Client>>>()
-                && let Some(client) = options.get(Some(table)).as_ref() {
+                && let Ok(option) = options.get_named(table)
+                && let Some(client) = &*option {
                     return client.clone();
                 }
             let config = if let Some(config) = config.take() {
@@ -453,4 +456,5 @@ cfg_if! {
             }
         }
     }
+    _ => {}
 }

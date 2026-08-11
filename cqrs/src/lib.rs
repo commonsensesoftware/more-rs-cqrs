@@ -41,10 +41,8 @@ pub mod snapshot;
 
 pub use cqrs_macros::*;
 
-use cfg_if::cfg_if;
-
-cfg_if! {
-    if #[cfg(feature = "mem")] {
+cfg_select! {
+    feature = "mem" => {
         mod mem;
 
         /// Provides in-memory storage.
@@ -57,4 +55,5 @@ cfg_if! {
             pub use mem::{EventStore, SnapshotStore};
         }
     }
+    _ => {}
 }

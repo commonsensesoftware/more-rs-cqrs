@@ -24,7 +24,6 @@ aws-config = { version = "1.8", optional = true }
 aws-sdk-dynamodb = { version = "1.104", optional = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
-cfg-if = { workspace = true }
 futures = { workspace = true, features = ["executor"] }
 futures-core = { workspace = true }
 more-di = { workspace = true, features = ["async"], optional = true }

@@ -25,7 +25,6 @@ protobuf = ["dep:prost"]
 more-cqrs-macros = { path = "../cqrs-macros" }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
-cfg-if = { workspace = true }
 ciborium = { version = "0.2", optional = true }
 futures = { workspace = true }
 futures-core = { workspace = true }

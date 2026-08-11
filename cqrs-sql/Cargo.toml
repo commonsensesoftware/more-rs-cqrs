@@ -24,7 +24,6 @@ migrate = ["sqlx/migrate"]
 more-cqrs = { path = "../cqrs" }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
-cfg-if = { workspace = true }
 futures = { workspace = true }
 futures-core = { workspace = true }
 more-di = { workspace = true, features = ["async"], optional = true }

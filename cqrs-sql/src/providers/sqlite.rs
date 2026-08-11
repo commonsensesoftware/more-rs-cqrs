@@ -60,9 +60,10 @@ where
     }
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "migrate")] {
+cfg_select! {
+    feature = "migrate" => {
         mod migration;
         pub use migration::Migrator;
     }
+    _ => {}
 }
