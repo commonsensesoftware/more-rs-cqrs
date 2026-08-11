@@ -5,8 +5,8 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-aws-config = "1.8"
-aws-sdk-dynamodb = "1.104"
+aws-config = "1.10"
+aws-sdk-dynamodb = "1.120"
 futures.workspace = true
 more-cqrs = { path = "../../cqrs", features = ["di", "protobuf"] }
 more-cqrs-nosql = { path = "../../cqrs-nosql", features = ["di", "dynamodb", "migrate"] }
