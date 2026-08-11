@@ -1,6 +1,5 @@
 use self::SqlStoreBuilderError::*;
 use crate::{event, snapshot, sql::Ident};
-use cfg_if::cfg_if;
 use cqrs::{
     Clock, Concurrency, Mask, WallClock,
     event::{Delete, Event, StoreOptions as EventStoreOptions},
@@ -252,8 +251,8 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Snapshot, DB> {
     }
 }
 
-cfg_if! {
-    if #[cfg(feature = "sqlite")] {
+cfg_select! {
+    feature = "sqlite" => {
         use crate::sqlite::{EventStore, SnapshotStore};
         use sqlx::Sqlite;
 
@@ -323,4 +322,5 @@ cfg_if! {
             }
         }
     }
+    _ => {}
 }

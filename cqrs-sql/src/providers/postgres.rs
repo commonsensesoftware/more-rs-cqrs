@@ -66,9 +66,10 @@ pub type EventStore<ID> = event::SqlStore<ID, Postgres>;
 /// Represents a Postgres [snapshot store](snapshot::SqlStore).
 pub type SnapshotStore<ID> = snapshot::SqlStore<ID, Postgres>;
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "migrate")] {
+cfg_select! {
+    feature = "migrate" => {
         mod migration;
         pub use migration::Migrator;
     }
+    _ => {}
 }

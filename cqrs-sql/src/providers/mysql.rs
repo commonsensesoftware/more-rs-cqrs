@@ -67,9 +67,10 @@ pub type EventStore<ID> = event::SqlStore<ID, MySql>;
 /// Represents a MySql [snapshot store](snapshot::SqlStore).
 pub type SnapshotStore<ID> = snapshot::SqlStore<ID, MySql>;
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "migrate")] {
+cfg_select! {
+    feature = "migrate" => {
         mod migration;
         pub use migration::Migrator;
     }
+    _ => {}
 }

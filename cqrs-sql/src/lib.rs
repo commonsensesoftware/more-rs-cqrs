@@ -33,17 +33,17 @@ pub use providers::postgres;
 /// Provides storage using SQLite.
 pub use providers::sqlite;
 
-use cfg_if::cfg_if;
 use std::{
     error::Error,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-cfg_if! {
-    if #[cfg(feature = "migrate")] {
+cfg_select! {
+    feature = "migrate" => {
         mod migrate;
         pub use migrate::{SqlStoreMigrator, SqlStoreMigration};
     }
+    _ => {}
 }
 
 pub(crate) trait BoxErr<T> {

@@ -1,15 +1,14 @@
 use super::{DynEventStore, DynSnapshotStore, SqlOptions, merge};
 use crate::sqlite::{EventStore, SnapshotStore};
-use cfg_if::cfg_if;
 use cqrs::{
-    Aggregate, Clock, Mask, Repository, prelude::AggregateBuilder, event::Event, message::Transcoder,
-    snapshot::Snapshot,
+    Aggregate, Clock, Mask, Repository, event::Event, message::Transcoder,
+    prelude::AggregateBuilder, snapshot::Snapshot,
 };
 use di::{
     Ref, ServiceCollection, exactly_one, exactly_one_with_key, singleton_as_self,
     singleton_with_key, singleton_with_key_factory, zero_or_one, zero_or_one_with_key,
 };
-use options::OptionsSnapshot;
+use options::Snapshot as OptionsSnapshot;
 use sqlx::{Decode, Encode, Sqlite, Type, pool::PoolOptions};
 use std::{any::type_name, marker::PhantomData, sync::Arc};
 
@@ -104,9 +103,9 @@ where
                         .clock(sp.get_required::<dyn Clock>())
                         .transcoder(sp.get_required::<Transcoder<dyn Event>>());
 
-                    if let Some(snapshot) = &options {
-                        let db = snapshot.get(Some(name));
-
+                    if let Some(snapshot) = &options
+                        && let Ok(db) = snapshot.get_named(name)
+                    {
                         if !db.url.is_empty() {
                             builder = builder.url(db.url.clone());
                         }
@@ -340,8 +339,8 @@ where
     }
 }
 
-cfg_if! {
-    if #[cfg(feature = "migrate")] {
+cfg_select! {
+    feature = "migrate" => {
         use crate::{SqlStoreMigration, SqlStoreMigrator};
         use di::{transient_as_self, Injectable};
 
@@ -414,4 +413,5 @@ cfg_if! {
             }
         }
     }
+    _ => {}
 }

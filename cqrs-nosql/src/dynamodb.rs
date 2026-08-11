@@ -14,7 +14,6 @@ use aws_sdk_dynamodb::{
         DeleteRequest, WriteRequest,
     },
 };
-use cfg_if::cfg_if;
 use cqrs::snapshot::Retention;
 use std::{
     collections::HashMap,
@@ -25,11 +24,12 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-cfg_if! {
-    if #[cfg(feature = "migrate")] {
+cfg_select! {
+    feature = "migrate" => {
         mod migration;
         pub use migration::{EventStoreMigration, SnapshotStoreMigration};
     }
+    _ => {}
 }
 
 #[inline]

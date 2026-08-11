@@ -6,7 +6,7 @@ use std::{
 
 /// Defines the behavior to migrate storage.
 #[async_trait]
-pub trait StoreMigration {
+pub trait StoreMigration: Send + Sync {
     /// Runs the storage migration.
     async fn run(&self) -> Result<(), Box<dyn Error + 'static>>;
 }
@@ -48,8 +48,8 @@ impl StoreMigrator {
     }
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "di")] {
+cfg_select! {
+    feature = "di" => {
         use di::{inject, injectable, Ref};
 
         #[injectable]
@@ -62,4 +62,5 @@ cfg_if::cfg_if! {
             }
         }
     }
+    _ => {}
 }

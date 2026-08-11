@@ -3,7 +3,6 @@ use crate::{
     event,
     snapshot::{self, Prune, Upsert},
 };
-use cfg_if::cfg_if;
 use cqrs::{
     Aggregate, Clock, Mask, Repository, event::Event, message::Transcoder, snapshot::Snapshot,
 };
@@ -11,7 +10,7 @@ use di::{
     Ref, ServiceCollection, exactly_one, exactly_one_with_key, singleton_as_self,
     singleton_with_key, zero_or_one, zero_or_one_with_key,
 };
-use options::OptionsSnapshot;
+use options::Snapshot as OptionsSnapshot;
 use sqlx::{
     ColumnIndex, Database, Decode, Encode, Executor, FromRow, IntoArguments, Type,
     pool::PoolOptions,
@@ -124,9 +123,9 @@ where
                         builder = builder.mask(mask);
                     }
 
-                    if let Some(snapshot) = &options {
-                        let db = snapshot.get(Some(name));
-
+                    if let Some(snapshot) = &options
+                        && let Ok(db) = snapshot.get_named(name)
+                    {
                         if !db.url.is_empty() {
                             builder = builder.url(db.url.clone());
                         }
@@ -390,8 +389,8 @@ where
     }
 }
 
-cfg_if! {
-    if #[cfg(feature = "migrate")] {
+cfg_select! {
+    feature = "migrate" => {
         use super::SqlMigrationsBuilder;
         use sqlx::migrate::{Migrate, Migration};
 
@@ -420,4 +419,5 @@ cfg_if! {
             }
         }
     }
+    _ => {}
 }

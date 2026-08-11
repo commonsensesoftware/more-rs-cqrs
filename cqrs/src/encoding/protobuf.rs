@@ -2,12 +2,12 @@ use crate::event::Event;
 use crate::message::{Encoded, Encoding, Schema};
 use crate::snapshot::Snapshot;
 use prost::{
+    DecodeError, Message,
     bytes::{Buf, BufMut},
     encoding::{
-        check_wire_type, encode_key, encoded_len_varint, key_len, skip_field, DecodeContext,
-        WireType,
+        DecodeContext, WireType, check_wire_type, encode_key, encoded_len_varint, key_len,
+        skip_field,
     },
-    DecodeError, Message,
 };
 use std::error::Error;
 use std::fmt::{self, Debug, Formatter, Result as FormatResult};
@@ -102,6 +102,9 @@ impl Message for Uuid {
         buf.put_slice(self.as_bytes());
     }
 
+    // there's no other way to construct a DecodeError
+    // REF: https://github.com/tokio-rs/prost/issues/1377
+    #[allow(deprecated)]
     fn merge_field(
         &mut self,
         tag: u32,

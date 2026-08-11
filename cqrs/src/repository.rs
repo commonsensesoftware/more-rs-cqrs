@@ -3,7 +3,6 @@ use crate::{
     event::{Predicate, PredicateBuilder, Store, StoreError},
     message::EncodingError,
 };
-use cfg_if::cfg_if;
 use futures::{StreamExt, TryStreamExt, future::ready, stream::once};
 use std::{error::Error, fmt::Debug, sync::Arc};
 use thiserror::Error;
@@ -184,8 +183,8 @@ where
     }
 }
 
-cfg_if! {
-    if #[cfg(feature = "di")] {
+cfg_select! {
+    feature = "di" => {
         use di::{inject, injectable, KeyedRef};
 
         #[injectable]
@@ -200,4 +199,5 @@ cfg_if! {
             }
         }
     }
+    _ => {}
 }
