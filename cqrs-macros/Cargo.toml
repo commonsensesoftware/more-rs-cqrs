@@ -15,9 +15,9 @@ proc-macro = true
 doctest = false
 
 [dependencies]
-proc-macro2 = "1.0"
-quote = "1.0"
-syn = { version = "2.0", features = ["full"] }
+proc-macro2 = "1.0.107"
+quote = "1.0.47"
+syn = { workspace = true, features = ["full"] }
 
 [dev-dependencies]
-syn = { version = "2.0", features = ["full", "extra-traits"] }
+syn = { workspace = true, features = ["full", "extra-traits"] }

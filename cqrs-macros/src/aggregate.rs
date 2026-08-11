@@ -249,8 +249,7 @@ fn new_function_to_event_map(impl_: &ItemImpl) -> Result<Vec<(&Ident, &Ident)>> 
 fn get_mapped_function<'a>(args: &[&'a FnArg]) -> Option<&'a Ident> {
     if args.len() == 2
         && let FnArg::Receiver(self_) = args[0]
-        && self_.reference.is_some()
-        && self_.mutability.is_some()
+        && matches!(self_.kind, ReceiverKind::Reference(_, None, Some(_)))
         && let FnArg::Typed(event) = args[1]
         && let Type::Reference(ref_) = event.ty.as_ref()
         && ref_.mutability.is_none()
@@ -277,8 +276,7 @@ fn get_catch_all(impl_: &ItemImpl) -> Result<Option<&Ident>> {
             let event_type = Ident::new("Event", Span::call_site());
 
             if let FnArg::Receiver(self_) = args[0]
-                && self_.reference.is_some()
-                && self_.mutability.is_some()
+                && matches!(self_.kind, ReceiverKind::Reference(_, None, Some(_)))
                 && let FnArg::Typed(event) = args[1]
                 && let Type::Reference(ref_) = event.ty.as_ref()
                 && ref_.mutability.is_none()
