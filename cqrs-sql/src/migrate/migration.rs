@@ -3,7 +3,7 @@ use sqlx::{
     error::BoxDynError,
     migrate::{Migrate, MigrateError, Migration, MigrationSource, Migrator},
     pool::PoolOptions,
-    Database, Pool,
+    AssertSqlSafe, Database, Pool, SqlSafeStr,
 };
 use std::borrow::Cow;
 
@@ -89,7 +89,7 @@ where
             m1.version,
             Cow::Owned(format!("{} {}", m1.description, m2.description)),
             m1.migration_type,
-            Cow::Owned(format!("{}\n{}", m1.sql, m2.sql)),
+            AssertSqlSafe(format!("{}\n{}", m1.sql.as_str(), m2.sql.as_str())).into_sql_str(),
             m1.no_tx,
         )
     }

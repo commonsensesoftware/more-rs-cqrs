@@ -30,7 +30,7 @@ where
         id: &'a ID,
         clock: &'a dyn Clock,
         retention: &'a Retention,
-    ) -> sqlx::QueryBuilder<'a, Sqlite> {
+    ) -> sqlx::QueryBuilder<Sqlite> {
         let mut delete = QueryBuilder::new("DELETE FROM ");
 
         delete.push(table.quote()).push("WHERE id = ").push_bind(id);

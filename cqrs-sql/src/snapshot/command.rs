@@ -12,7 +12,7 @@ pub fn select<'a, ID, DB>(
     id: &'a ID,
     predicate: Option<&Predicate>,
     mask: Option<&(dyn Mask + 'static)>,
-) -> QueryBuilder<'a, DB>
+) -> QueryBuilder<DB>
 where
     ID: Debug + Encode<'a, DB> + Send + Type<DB> + 'a,
     DB: Database,
@@ -56,7 +56,7 @@ where
     select
 }
 
-pub fn insert<'a, ID, DB>(table: &'a sql::Ident<'a>, row: &'a sql::Row<ID>) -> QueryBuilder<'a, DB>
+pub fn insert<'a, ID, DB>(table: &'a sql::Ident<'a>, row: &'a sql::Row<ID>) -> QueryBuilder<DB>
 where
     DB: Database + Upsert,
     ID: Encode<'a, DB> + Send + Type<DB> + 'a,

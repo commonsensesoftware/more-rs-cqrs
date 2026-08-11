@@ -5,7 +5,7 @@ use crate::{
 };
 use sqlx::{
     migrate::{Migration, MigrationType::Simple},
-    Postgres,
+    AssertSqlSafe, Postgres, SqlSafeStr,
 };
 use std::any::type_name;
 use std::borrow::Cow;
@@ -20,7 +20,7 @@ impl<ID> From<&postgres::EventStore<ID>> for Migration {
             1,
             Cow::Owned(format!("'{}' events table.", value.table.name())),
             Simple,
-            Cow::Owned(events_table(&value.table, db_type::<ID>())),
+            AssertSqlSafe(events_table(&value.table, db_type::<ID>())).into_sql_str(),
             false,
         )
     }
@@ -32,7 +32,7 @@ impl<ID> From<&postgres::SnapshotStore<ID>> for Migration {
             1,
             Cow::Owned(format!("'{}' snapshots table.", value.table.name())),
             Simple,
-            Cow::Owned(snapshots_table(&value.table, db_type::<ID>())),
+            AssertSqlSafe(snapshots_table(&value.table, db_type::<ID>())).into_sql_str(),
             false,
         )
     }
