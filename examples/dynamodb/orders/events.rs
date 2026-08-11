@@ -130,13 +130,7 @@ mod events {
     }
 
     impl AddressUpdated {
-        pub fn to<U: Into<Uuid>>(
-            id: U,
-            date: SystemTime,
-            street: String,
-            region: String,
-            postal_code: String,
-        ) -> Self {
+        pub fn to<U: Into<Uuid>>(id: U, date: SystemTime, street: String, region: String, postal_code: String) -> Self {
             Self {
                 id: Some(id.into()),
                 date: date.to_secs(),
@@ -180,12 +174,7 @@ mod events {
     }
 
     impl Paid {
-        pub fn with<U: Into<Uuid>>(
-            id: U,
-            date: SystemTime,
-            amount: f32,
-            transaction_id: String,
-        ) -> Self {
+        pub fn with<U: Into<Uuid>>(id: U, date: SystemTime, amount: f32, transaction_id: String) -> Self {
             Self {
                 id: Some(id.into()),
                 date: date.to_secs(),

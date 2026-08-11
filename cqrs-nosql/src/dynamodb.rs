@@ -33,11 +33,7 @@ cfg_select! {
 }
 
 #[inline]
-fn op<T: Copy>(
-    bound: &Bound<T>,
-    op1: &'static str,
-    op2: &'static str,
-) -> Option<(T, &'static str)> {
+fn op<T: Copy>(bound: &Bound<T>, op1: &'static str, op2: &'static str) -> Option<(T, &'static str)> {
     match bound {
         Included(value) => Some((*value, op1)),
         Excluded(value) => Some((*value, op2)),
@@ -97,10 +93,7 @@ async fn delete_all(
 
         if let Some(retention) = retention {
             if let Some(age) = retention.age {
-                let age = (SystemTime::now() - age)
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
+                let age = (SystemTime::now() - age).duration_since(UNIX_EPOCH).unwrap().as_secs();
                 let taken_on = attributes
                     .remove("takenOn")
                     .unwrap()

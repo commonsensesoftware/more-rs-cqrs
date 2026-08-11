@@ -1,13 +1,14 @@
 mod common;
 
 use common::{
+    TestResult,
     domain::{self, Account},
-    scenario, TestResult,
+    scenario,
 };
-use cqrs::{snapshot::Store, Repository, RepositoryError};
+use cqrs::{Repository, RepositoryError, snapshot::Store};
 use cqrs_sql::{
-    sqlite::{EventStore, Migrator, SnapshotStore},
     SqlStoreMigration,
+    sqlite::{EventStore, Migrator, SnapshotStore},
 };
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;

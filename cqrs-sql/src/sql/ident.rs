@@ -6,8 +6,7 @@ const UNDERSCORE: char = '_';
 
 #[inline]
 fn all_allowed(text: &str) -> bool {
-    text.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == UNDERSCORE)
+    text.chars().all(|c| c.is_ascii_alphanumeric() || c == UNDERSCORE)
 }
 
 fn escape(text: &str) -> String {
@@ -204,11 +203,7 @@ mod tests {
     #[case(Some("main"), "My Table", "\"main\".\"My Table\"")]
     #[case(None, "Table", "Table")]
     #[case(None, "My Table", "\"My Table\"")]
-    fn identifier_should_be_escaped(
-        #[case] schema: Option<&str>,
-        #[case] table: &str,
-        #[case] expected: &str,
-    ) {
+    fn identifier_should_be_escaped(#[case] schema: Option<&str>, #[case] table: &str, #[case] expected: &str) {
         // arrange
         let ident = Ident(schema, table);
 

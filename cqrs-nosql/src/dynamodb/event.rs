@@ -20,9 +20,7 @@ use aws_sdk_dynamodb::{
 };
 use cqrs::{
     Clock, Mask, Range, Version,
-    event::{
-        Event, EventStream, IdStream, Predicate, PredicateBuilder, Store, StoreError, StoreOptions,
-    },
+    event::{Event, EventStream, IdStream, Predicate, PredicateBuilder, Store, StoreError, StoreOptions},
     message::{Saved, Schema},
 };
 use std::{error::Error, fmt::Debug, str::FromStr, sync::Arc, time::SystemTime};
@@ -52,16 +50,14 @@ where
             condition.push_str(" AND (version ");
             condition.push_str(op);
             condition.push_str(" :version)");
-            request =
-                request.expression_attribute_values(":version", N(version.sort_key().to_string()));
+            request = request.expression_attribute_values(":version", N(version.sort_key().to_string()));
         }
 
         if let Some((from, op)) = greater_than(&predicate.stored_on.from) {
             filter.push_str("(storedOn ");
             filter.push_str(op);
             filter.push_str(" :from)");
-            request =
-                request.expression_attribute_values(":from", N(crate::to_secs(from).to_string()));
+            request = request.expression_attribute_values(":from", N(crate::to_secs(from).to_string()));
         }
 
         if let Some((to, op)) = less_than(&predicate.stored_on.to) {
@@ -165,12 +161,7 @@ where
     ID: Clone + Debug + Send + Sync + ToString + 'static,
 {
     #[allow(clippy::borrowed_box)]
-    async fn write_one(
-        &self,
-        id: &ID,
-        version: Version,
-        event: &Box<dyn Event>,
-    ) -> Result<Version, StoreError<ID>> {
+    async fn write_one(&self, id: &ID, version: Version, event: &Box<dyn Event>) -> Result<Version, StoreError<ID>> {
         let stored_on = crate::to_secs(self.options.clock().now());
         let schema = event.schema();
         let content = self.options.transcoder().encode(event.as_ref())?;
@@ -190,11 +181,7 @@ where
                 .condition_expression("attribute_exists(id) AND attribute_exists(version)")
                 .expression_attribute_values(":version", N(previous.sort_key().to_string()));
 
-            request = request.transact_items(
-                TransactWriteItem::builder()
-                    .update(update.build().unwrap())
-                    .build(),
-            );
+            request = request.transact_items(TransactWriteItem::builder().update(update.build().unwrap()).build());
 
             let mut put = Put::builder()
                 .table_name(&self.table)
@@ -210,11 +197,7 @@ where
                 put = put.item("correlationId", S(cid.into()));
             }
 
-            request = request.transact_items(
-                TransactWriteItem::builder()
-                    .put(put.build().unwrap())
-                    .build(),
-            );
+            request = request.transact_items(TransactWriteItem::builder().put(put.build().unwrap()).build());
 
             if let Err(failure) = request.send().await {
                 let error = failure.into_service_error();
@@ -264,9 +247,7 @@ where
         if let Err(failure) = request.send().await {
             let error = failure.into_service_error();
 
-            if error.is_conditional_check_failed_exception()
-                || error.is_transaction_conflict_exception()
-            {
+            if error.is_conditional_check_failed_exception() || error.is_transaction_conflict_exception() {
                 Err(StoreError::Conflict(id.clone(), version.number()))
             } else {
                 Err(StoreError::Unknown(Box::new(error) as Box<dyn Error + Send>))
@@ -298,11 +279,7 @@ where
                 .condition_expression("attribute_exists(id) AND attribute_exists(version)")
                 .expression_attribute_values(":version", N(previous.sort_key().to_string()));
 
-            request = request.transact_items(
-                TransactWriteItem::builder()
-                    .update(update.build().unwrap())
-                    .build(),
-            );
+            request = request.transact_items(TransactWriteItem::builder().update(update.build().unwrap()).build());
         }
 
         let mut current_version = version;
@@ -324,11 +301,7 @@ where
                 put = put.item("correlationId", S(cid.into()));
             }
 
-            request = request.transact_items(
-                TransactWriteItem::builder()
-                    .put(put.build().unwrap())
-                    .build(),
-            );
+            request = request.transact_items(TransactWriteItem::builder().put(put.build().unwrap()).build());
             current_version = version;
             version = current_version.increment(Sequence);
         }
@@ -381,11 +354,8 @@ where
             .table_name(&self.table)
             .key_condition_expression("version = :version")
             .expression_attribute_values(":version", N(new_version(1, 0).sort_key().to_string()));
-        let predicate = PredicateBuilder::<T>::new(None)
-            .stored_on(stored_on)
-            .build();
-        let query =
-            apply_predicate(request, Some(&predicate), self.options.mask()).into_paginator();
+        let predicate = PredicateBuilder::<T>::new(None).stored_on(stored_on).build();
+        let query = apply_predicate(request, Some(&predicate), self.options.mask()).into_paginator();
         let mut items = query.items().send();
 
         Box::pin(try_stream! {
@@ -463,9 +433,7 @@ where
                     break;
                 }
                 Err(error) => {
-                    if matches!(error, StoreError::Conflict(_, _))
-                        && !self.options.concurrency().enforced()
-                    {
+                    if matches!(error, StoreError::Conflict(_, _)) && !self.options.concurrency().enforced() {
                         continue;
                     } else {
                         return Err(error);

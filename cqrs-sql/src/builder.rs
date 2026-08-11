@@ -218,11 +218,7 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Event, DB> {
             self.snapshots,
         );
 
-        Ok(event::SqlStore::new(
-            table,
-            pool.connect_lazy(&url)?,
-            options,
-        ))
+        Ok(event::SqlStore::new(table, pool.connect_lazy(&url)?, options))
     }
 }
 
@@ -243,11 +239,7 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Snapshot, DB> {
             self.transcoder.unwrap_or_default(),
         );
 
-        Ok(snapshot::SqlStore::new(
-            table,
-            pool.connect_lazy(&url)?,
-            options,
-        ))
+        Ok(snapshot::SqlStore::new(table, pool.connect_lazy(&url)?, options))
     }
 }
 

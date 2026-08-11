@@ -1,6 +1,8 @@
 use super::{Predicate, Retention, Snapshot};
 use crate::{
-    Clock, Mask, StoreOptionsBuilder, Version, event::StoreError, message::{Descriptor, EncodingError, Saved, Transcoder}
+    Clock, Mask, StoreOptionsBuilder, Version,
+    event::StoreError,
+    message::{Descriptor, EncodingError, Saved, Transcoder},
 };
 use async_trait::async_trait;
 use std::{error::Error, fmt::Debug, sync::Arc};
@@ -28,11 +30,7 @@ pub trait Store<T: Debug + Send = Uuid>: Send + Sync {
     ///
     /// * `id` - the identifier of the [snapshot](Snapshot) to load
     /// * `predicate` - the optional [predicate](Predicate) used to filter the snapshot
-    async fn load_raw(
-        &self,
-        id: &T,
-        predicate: Option<&Predicate>,
-    ) -> Result<Option<Descriptor>, SnapshotError>;
+    async fn load_raw(&self, id: &T, predicate: Option<&Predicate>) -> Result<Option<Descriptor>, SnapshotError>;
 
     /// Saves a snapshot.
     ///
@@ -41,12 +39,7 @@ pub trait Store<T: Debug + Send = Uuid>: Send + Sync {
     /// * `id` - the identifier of the [snapshot](Snapshot) to save
     /// * `version` - the [version](Version) of the [snapshot](Snapshot) to save
     /// * `snapshot` - the [snapshot](Snapshot) to save
-    async fn save(
-        &self,
-        id: &T,
-        version: Version,
-        snapshot: Box<dyn Snapshot>,
-    ) -> Result<(), SnapshotError>;
+    async fn save(&self, id: &T, version: Version, snapshot: Box<dyn Snapshot>) -> Result<(), SnapshotError>;
 
     /// Prunes snapshots for the specified identifier using the specified retention policy.
     ///
@@ -77,11 +70,7 @@ impl StoreOptions {
     /// * `mask` - the optional [mask](Mask) used to obfuscate [versions](Version)
     /// * `clock` - the associated [clock](Clock)
     /// * `transcoder` - the associated [transcoder](Transcoder)
-    pub fn new(
-        mask: Option<Arc<dyn Mask>>,
-        clock: Arc<dyn Clock>,
-        transcoder: Arc<Transcoder<dyn Snapshot>>,
-    ) -> Self {
+    pub fn new(mask: Option<Arc<dyn Mask>>, clock: Arc<dyn Clock>, transcoder: Arc<Transcoder<dyn Snapshot>>) -> Self {
         Self {
             mask,
             clock,

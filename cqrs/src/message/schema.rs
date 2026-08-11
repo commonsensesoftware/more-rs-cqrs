@@ -77,8 +77,7 @@ impl Hash for Schema {
 
 impl PartialEq for Schema {
     fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind
-            && (self.version == other.version || self.version == ANY || other.version == ANY)
+        self.kind == other.kind && (self.version == other.version || self.version == ANY || other.version == ANY)
     }
 }
 

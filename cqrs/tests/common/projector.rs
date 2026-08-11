@@ -1,9 +1,10 @@
 use super::domain::{Credited, Debited, Statement};
 use async_trait::async_trait;
 use cqrs::{
+    Clock, Range, Version, WallClock,
     event::{Event, EventStream, IdStream, Predicate, Receiver, Store, StoreError},
     projection::{FilterBuilder, Projector},
-    projectors, Clock, Range, Version, WallClock,
+    projectors,
 };
 use std::{error::Error, sync::Arc, time::SystemTime};
 use std::{fmt::Debug, marker::PhantomData};
@@ -145,10 +146,7 @@ mod projectors {
             Box::pin(futures::stream::iter(std::iter::empty()))
         }
 
-        async fn load<'a>(
-            &self,
-            _predicate: Option<&'a Predicate<'a, u64>>,
-        ) -> EventStream<'a, u64> {
+        async fn load<'a>(&self, _predicate: Option<&'a Predicate<'a, u64>>) -> EventStream<'a, u64> {
             Box::pin(futures::stream::iter(std::iter::empty()))
         }
 

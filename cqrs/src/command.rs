@@ -1,5 +1,5 @@
-mod message;
 mod handler;
+mod message;
 
-pub use message::Command;
 pub use handler::Handler;
+pub use message::Command;

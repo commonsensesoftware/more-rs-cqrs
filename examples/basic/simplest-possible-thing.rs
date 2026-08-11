@@ -80,10 +80,7 @@ mod events {
         }
 
         pub fn new(id: Uuid, new_name: String) -> Self {
-            Self {
-                id: Some(id),
-                new_name,
-            }
+            Self { id: Some(id), new_name }
         }
     }
 }

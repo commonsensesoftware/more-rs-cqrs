@@ -10,9 +10,7 @@ use cqrs::{
     snapshot::{Predicate, Retention, Snapshot, SnapshotError, Store, StoreOptions},
 };
 use futures::StreamExt;
-use sqlx::{
-    ColumnIndex, Connection, Database, Decode, Encode, Executor, IntoArguments, Pool, Row, Type,
-};
+use sqlx::{ColumnIndex, Connection, Database, Decode, Encode, Executor, IntoArguments, Pool, Row, Type};
 use std::{fmt::Debug, marker::PhantomData};
 
 /// Represents a SQL [snapshot store](Store).
@@ -49,13 +47,7 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
 #[async_trait]
 impl<ID, DB> Store<ID> for SqlStore<ID, DB>
 where
-    ID: Clone
-        + Debug
-        + for<'db> Encode<'db, DB>
-        + for<'db> Decode<'db, DB>
-        + Send
-        + Sync
-        + Type<DB>,
+    ID: Clone + Debug + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Send + Sync + Type<DB>,
     DB: Database + for<'db> Prune<'db, ID, DB> + Upsert,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
@@ -84,11 +76,7 @@ where
         }
     }
 
-    async fn load_raw(
-        &self,
-        id: &ID,
-        predicate: Option<&Predicate>,
-    ) -> Result<Option<Descriptor>, SnapshotError> {
+    async fn load_raw(&self, id: &ID, predicate: Option<&Predicate>) -> Result<Option<Descriptor>, SnapshotError> {
         const VERSION: usize = 0;
         const TYPE: usize = 1;
         const REVISION: usize = 2;
@@ -116,12 +104,7 @@ where
         }
     }
 
-    async fn save(
-        &self,
-        id: &ID,
-        mut version: Version,
-        snapshot: Box<dyn Snapshot>,
-    ) -> Result<(), SnapshotError> {
+    async fn save(&self, id: &ID, mut version: Version, snapshot: Box<dyn Snapshot>) -> Result<(), SnapshotError> {
         if version != Default::default()
             && let Some(mask) = self.options.mask()
         {

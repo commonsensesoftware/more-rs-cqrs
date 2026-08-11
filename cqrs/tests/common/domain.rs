@@ -19,10 +19,7 @@ mod events {
 
     impl Debited {
         pub fn new<S: Into<String>>(id: S, amount: f32) -> Self {
-            Self {
-                id: id.into(),
-                amount,
-            }
+            Self { id: id.into(), amount }
         }
     }
 
@@ -35,10 +32,7 @@ mod events {
 
     impl Credited {
         pub fn new<S: Into<String>>(id: S, amount: f32) -> Self {
-            Self {
-                id: id.into(),
-                amount,
-            }
+            Self { id: id.into(), amount }
         }
     }
 

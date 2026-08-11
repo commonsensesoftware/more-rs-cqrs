@@ -87,9 +87,7 @@ where
     ///
     /// * `store` - the underlying [store](Store)
     pub fn new<S: Store<A::ID> + 'static>(store: S) -> Self {
-        Self {
-            store: Arc::new(store),
-        }
+        Self { store: Arc::new(store) }
     }
 
     /// Gets an [aggregate](Aggregate) with the specified identifier.
@@ -99,11 +97,7 @@ where
     /// * `id` - the aggregate identifier
     /// * `predicate` - the [predicate](Predicate) used to filter [events](crate::event::Event), if any
     ///
-    pub async fn get(
-        &self,
-        id: &A::ID,
-        predicate: Option<&Predicate<'_, A::ID>>,
-    ) -> Result<A, RepositoryError<A::ID>> {
+    pub async fn get(&self, id: &A::ID, predicate: Option<&Predicate<'_, A::ID>>) -> Result<A, RepositoryError<A::ID>> {
         let mut builder = PredicateBuilder::new(Some(id));
 
         if let Some(predicate) = predicate {
@@ -177,9 +171,7 @@ where
     A::ID: Clone + Debug + Send + 'static,
 {
     fn from(value: Arc<dyn Store<A::ID>>) -> Self {
-        Repository {
-            store: value.clone(),
-        }
+        Repository { store: value.clone() }
     }
 }
 

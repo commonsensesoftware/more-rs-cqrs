@@ -1,8 +1,8 @@
 use crate::{SqlVersion, SqlVersionPart::Sequence};
 use cqrs::{
+    Clock, Version,
     event::{Event, StoreError},
     message::Transcoder,
-    Clock, Version,
 };
 use std::fmt::Debug;
 
@@ -113,7 +113,7 @@ where
                 Ok(content) => content,
                 Err(error) => return Some(Err(StoreError::InvalidEncoding(error))),
             };
-            
+
             self.index += 1;
             self.version = self.context.version;
             self.context.version = self.version.increment(Sequence);

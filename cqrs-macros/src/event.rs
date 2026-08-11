@@ -9,10 +9,7 @@ pub(crate) struct EventAttribute {
 
 impl Default for EventAttribute {
     fn default() -> Self {
-        Self {
-            kind: None,
-            version: 1,
-        }
+        Self { kind: None, version: 1 }
     }
 }
 

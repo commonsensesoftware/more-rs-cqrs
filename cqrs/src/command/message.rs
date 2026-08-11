@@ -1,4 +1,4 @@
-use crate::{message::Message, Version};
+use crate::{Version, message::Message};
 use std::any::Any;
 
 /// Defines the behavior of a command.

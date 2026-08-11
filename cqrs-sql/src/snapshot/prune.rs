@@ -1,5 +1,5 @@
 use crate::sql;
-use cqrs::{snapshot::Retention, Clock};
+use cqrs::{Clock, snapshot::Retention};
 use sqlx::{Database, QueryBuilder};
 
 /// Defines the behavior of a pruning SQL statement for snapshots.
@@ -12,10 +12,6 @@ pub trait Prune<'a, ID, DB: Database> {
     /// * `id` - the identifier of the snapshots to prune
     /// * `clock` - the current [clock](Clock)
     /// * `retention` - the [retention](Retention) policy to apply
-    fn prune(
-        table: &'a sql::Ident<'a>,
-        id: &'a ID,
-        clock: &'a dyn Clock,
-        retention: &'a Retention,
-    ) -> QueryBuilder<DB>;
+    fn prune(table: &'a sql::Ident<'a>, id: &'a ID, clock: &'a dyn Clock, retention: &'a Retention)
+    -> QueryBuilder<DB>;
 }

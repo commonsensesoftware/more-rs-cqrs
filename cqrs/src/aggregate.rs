@@ -4,8 +4,7 @@ use futures::Stream;
 use std::{error::Error, fmt::Debug, sync::Arc};
 
 /// Represents a [stream](Stream) of [saved](Saved) [events](Event).
-pub type EventHistory<'a> =
-    dyn Stream<Item = Result<Saved<Box<dyn Event>>, Box<dyn Error + Send>>> + Send + Unpin + 'a;
+pub type EventHistory<'a> = dyn Stream<Item = Result<Saved<Box<dyn Event>>, Box<dyn Error + Send>>> + Send + Unpin + 'a;
 
 /// Defines the behavior of an aggregate root.
 #[async_trait]
@@ -33,8 +32,7 @@ pub trait Aggregate: Send {
     /// # Arguments
     ///
     /// * `history` - the sequence of [events](Event) to replay.
-    async fn replay_all(&mut self, history: &mut EventHistory)
-    -> Result<(), Box<dyn Error + Send>>;
+    async fn replay_all(&mut self, history: &mut EventHistory) -> Result<(), Box<dyn Error + Send>>;
 
     /// Creates and returns a new [snapshot](Snapshot) of the aggregate.
     fn snapshot(&self) -> Option<Box<dyn Snapshot>> {
@@ -89,9 +87,9 @@ impl<'a> ChangeSet<'a> {
     }
 
     /// Accepts all of the changes in the [change set](ChangeSet).
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `version` - the new, accepted [version](Version)
     pub fn accept(&mut self, version: Version) {
         *self.version = version;

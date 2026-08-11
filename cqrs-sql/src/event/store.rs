@@ -11,10 +11,7 @@ use cqrs::{
     message::{Saved, Schema},
 };
 use futures::stream;
-use sqlx::{
-    ColumnIndex, Connection, Database, Decode, Encode, Executor, FromRow, IntoArguments, Pool, Row,
-    Type,
-};
+use sqlx::{ColumnIndex, Connection, Database, Decode, Encode, Executor, FromRow, IntoArguments, Pool, Row, Type};
 use std::{error::Error, fmt::Debug, ops::Bound, sync::Arc, time::SystemTime};
 
 /// Represents a SQL [event store](Store).
@@ -33,11 +30,7 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
     /// * `pool` - the underlying [connection pool](Pool)
     /// * `options` - the [store options](StoreOptions)
     pub fn new(table: Ident<'static>, pool: Pool<DB>, options: StoreOptions<ID>) -> Self {
-        Self {
-            table,
-            pool,
-            options,
-        }
+        Self { table, pool, options }
     }
 
     /// Creates and returns a new [SqlStoreBuilder].
@@ -49,14 +42,7 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
 #[async_trait]
 impl<ID, DB> Store<ID> for SqlStore<ID, DB>
 where
-    ID: Clone
-        + Debug
-        + for<'db> Encode<'db, DB>
-        + for<'db> Decode<'db, DB>
-        + Send
-        + Sync
-        + Type<DB>
-        + 'static,
+    ID: Clone + Debug + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Send + Sync + Type<DB> + 'static,
     DB: Database,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,

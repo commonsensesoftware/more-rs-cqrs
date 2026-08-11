@@ -115,12 +115,8 @@ impl SqlVersion for Version {
 
     fn increment(&self, part: SqlVersionPart) -> Self {
         match part {
-            SqlVersionPart::Version => {
-                Self::new(encode(self.number().saturating_add(1), 0))
-            }
-            SqlVersionPart::Sequence => {
-                Self::new(encode(self.number(), self.sequence().saturating_add(1)))
-            }
+            SqlVersionPart::Version => Self::new(encode(self.number().saturating_add(1), 0)),
+            SqlVersionPart::Sequence => Self::new(encode(self.number(), self.sequence().saturating_add(1))),
         }
     }
 
@@ -145,12 +141,9 @@ impl SqlVersion for Version {
             return true;
         }
 
-        let max = ((value & 0b00000000000000000000_111111_000000_000000000000000000000000_00000000)
-            >> 38) as u8;
-        let set = ((value & 0b00000000000000000000_000000_111111_000000000000000000000000_00000000)
-            >> 32) as u8;
-        let bits =
-            (value & 0b00000000000000000000_000000_000000_111111111111111111111111_11111111) as u32;
+        let max = ((value & 0b00000000000000000000_111111_000000_000000000000000000000000_00000000) >> 38) as u8;
+        let set = ((value & 0b00000000000000000000_000000_111111_000000000000000000000000_00000000) >> 32) as u8;
+        let bits = (value & 0b00000000000000000000_000000_000000_111111111111111111111111_11111111) as u32;
 
         max != max_bit(bits >> 8) || set != (bits.count_ones() as u8)
     }
@@ -196,10 +189,7 @@ mod test {
         }
 
         // assert
-        assert_eq!(
-            versions,
-            vec![new_version(1, 0), new_version(1, 1), new_version(1, 2)]
-        );
+        assert_eq!(versions, vec![new_version(1, 0), new_version(1, 1), new_version(1, 2)]);
     }
 
     #[rstest]
