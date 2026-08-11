@@ -8,11 +8,7 @@ pub(crate) use row::{Context, IntoRows, Row};
 use std::ops::Bound::{self, Excluded, Included};
 
 #[inline]
-fn op<T: Copy>(
-    bound: &Bound<T>,
-    op1: &'static str,
-    op2: &'static str,
-) -> Option<(T, &'static str)> {
+fn op<T: Copy>(bound: &Bound<T>, op1: &'static str, op2: &'static str) -> Option<(T, &'static str)> {
     match bound {
         Included(value) => Some((*value, op1)),
         Excluded(value) => Some((*value, op2)),

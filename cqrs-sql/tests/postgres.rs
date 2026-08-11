@@ -1,16 +1,15 @@
 mod common;
 
 use common::{
+    TestResult,
     domain::{self, Account},
-    scenario, TestResult,
+    scenario,
 };
-use cqrs::{snapshot::Store, Repository, RepositoryError};
+use cqrs::{Repository, RepositoryError, snapshot::Store};
 use cqrs_sql::postgres::{EventStore, Migrator, SnapshotStore};
 use sqlx::pool::PoolOptions;
 use std::sync::Arc;
-use testcontainers_modules::{
-    postgres::Postgres as PostgresServer, testcontainers::runners::AsyncRunner,
-};
+use testcontainers_modules::{postgres::Postgres as PostgresServer, testcontainers::runners::AsyncRunner};
 
 #[tokio::test]
 async fn verify_postgres_integration() -> TestResult {

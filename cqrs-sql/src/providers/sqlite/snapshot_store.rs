@@ -51,13 +51,7 @@ impl<ID> SnapshotStore<ID> {
 #[async_trait]
 impl<ID> Store<ID> for SnapshotStore<ID>
 where
-    ID: Clone
-        + Debug
-        + for<'db> Encode<'db, Sqlite>
-        + for<'db> Decode<'db, Sqlite>
-        + Send
-        + Sync
-        + Type<Sqlite>,
+    ID: Clone + Debug + for<'db> Encode<'db, Sqlite> + for<'db> Decode<'db, Sqlite> + Send + Sync + Type<Sqlite>,
 {
     async fn load(
         &self,
@@ -76,11 +70,7 @@ where
         }
     }
 
-    async fn load_raw(
-        &self,
-        id: &ID,
-        predicate: Option<&Predicate>,
-    ) -> Result<Option<Descriptor>, SnapshotError> {
+    async fn load_raw(&self, id: &ID, predicate: Option<&Predicate>) -> Result<Option<Descriptor>, SnapshotError> {
         const VERSION: usize = 0;
         const TYPE: usize = 1;
         const REVISION: usize = 2;
@@ -108,12 +98,7 @@ where
         }
     }
 
-    async fn save(
-        &self,
-        id: &ID,
-        mut version: Version,
-        snapshot: Box<dyn Snapshot>,
-    ) -> Result<(), SnapshotError> {
+    async fn save(&self, id: &ID, mut version: Version, snapshot: Box<dyn Snapshot>) -> Result<(), SnapshotError> {
         if version != Default::default()
             && let Some(mask) = self.options.mask()
         {

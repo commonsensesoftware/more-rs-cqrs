@@ -33,11 +33,7 @@ impl<ID> EventStore<ID> {
     /// * `pool` - the underlying [connection pool](Pool)
     /// * `options` - the [store options](StoreOptions)
     pub fn new(table: String, pool: Pool<Sqlite>, options: StoreOptions<ID>) -> Self {
-        Self {
-            table,
-            pool,
-            options,
-        }
+        Self { table, pool, options }
     }
 
     /// Creates and returns a new [SqlStoreBuilder].

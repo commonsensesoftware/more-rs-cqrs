@@ -1,7 +1,4 @@
-use std::ops::{
-    Bound, Range as RangeOp, RangeBounds, RangeFrom, RangeFull, RangeInclusive, RangeTo,
-    RangeToInclusive,
-};
+use std::ops::{Bound, Range as RangeOp, RangeBounds, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
 
 /// Represents a range of values.
 #[derive(Debug)]

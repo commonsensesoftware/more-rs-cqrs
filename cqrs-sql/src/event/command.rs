@@ -26,9 +26,7 @@ where
 {
     let mut select = QueryBuilder::new("SELECT id FROM ");
 
-    select
-        .push(table.quote())
-        .push(" WHERE version = 1 AND sequence = 0");
+    select.push(table.quote()).push(" WHERE version = 1 AND sequence = 0");
 
     if let Some(lower) = greater_than(&stored_on.from) {
         select.push(" AND ");
@@ -88,11 +86,7 @@ where
 
         if let Some((version, op)) = greater_than(&version) {
             add_where(&mut select, &mut added);
-            select
-                .push("version ")
-                .push(op)
-                .push(" ")
-                .push_bind(version);
+            select.push("version ").push(op).push(" ").push_bind(version);
         }
 
         if let Some(lower) = greater_than(&predicate.stored_on.from) {
@@ -126,22 +120,16 @@ where
             select.push("(type = ").push_bind(schema.kind().to_string());
 
             if schema.version() > 0 {
-                select
-                    .push(" AND revision = ")
-                    .push_bind(schema.version() as i16);
+                select.push(" AND revision = ").push_bind(schema.version() as i16);
             }
 
             select.push(")");
 
             for schema in schemas {
-                select
-                    .push(" OR (type = ")
-                    .push_bind(schema.kind().to_string());
+                select.push(" OR (type = ").push_bind(schema.kind().to_string());
 
                 if schema.version() > 0 {
-                    select
-                        .push(" AND revision = ")
-                        .push_bind(schema.version() as i16);
+                    select.push(" AND revision = ").push_bind(schema.version() as i16);
                 }
 
                 select.push(")");

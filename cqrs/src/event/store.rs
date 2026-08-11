@@ -1,6 +1,9 @@
 use super::{Event, Predicate};
 use crate::{
-    Clock, Concurrency, Mask, Range, StoreOptionsBuilder, Version, event::Delete, message::{EncodingError, Saved, Transcoder}, snapshot
+    Clock, Concurrency, Mask, Range, StoreOptionsBuilder, Version,
+    event::Delete,
+    message::{EncodingError, Saved, Transcoder},
+    snapshot,
 };
 use async_trait::async_trait;
 use futures::Stream;
@@ -12,8 +15,7 @@ use uuid::Uuid;
 pub type IdStream<T> = Pin<Box<dyn Stream<Item = Result<T, StoreError<T>>> + Send>>;
 
 /// Represents a stored event [stream](Stream).
-pub type EventStream<'a, T> =
-    Pin<Box<dyn Stream<Item = Result<Saved<Box<dyn Event>>, StoreError<T>>> + Send + 'a>>;
+pub type EventStream<'a, T> = Pin<Box<dyn Stream<Item = Result<Saved<Box<dyn Event>>, StoreError<T>>> + Send + 'a>>;
 
 /// Defines the behavior of an event store.
 #[async_trait]

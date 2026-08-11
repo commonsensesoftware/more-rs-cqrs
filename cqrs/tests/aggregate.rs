@@ -9,10 +9,7 @@ use futures::stream;
 use std::error::Error;
 
 #[inline(always)]
-fn yield_item<T: Event + 'static>(
-    event: T,
-    version: u64,
-) -> Result<Saved<Box<dyn Event>>, Box<dyn Error + Send>> {
+fn yield_item<T: Event + 'static>(event: T, version: u64) -> Result<Saved<Box<dyn Event>>, Box<dyn Error + Send>> {
     Ok(Saved::new(Box::new(event), Version::new(version)))
 }
 

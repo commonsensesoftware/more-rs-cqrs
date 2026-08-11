@@ -1,5 +1,5 @@
-use crate::event::PredicateBuilder;
 use crate::Range;
+use crate::event::PredicateBuilder;
 use std::fmt::Debug;
 use std::time::SystemTime;
 use uuid::Uuid;

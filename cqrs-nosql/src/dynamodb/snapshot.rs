@@ -66,11 +66,7 @@ where
         }
     }
 
-    async fn load_raw(
-        &self,
-        id: &T,
-        predicate: Option<&Predicate>,
-    ) -> Result<Option<Descriptor>, SnapshotError> {
+    async fn load_raw(&self, id: &T, predicate: Option<&Predicate>) -> Result<Option<Descriptor>, SnapshotError> {
         let mut condition = String::from("id = :id");
         let mut request = self
             .ddb
@@ -88,8 +84,7 @@ where
                 condition.push_str(" AND version ");
                 condition.push_str(op);
                 condition.push_str(" :version");
-                request = request
-                    .expression_attribute_values(":version", N(version.number().to_string()));
+                request = request.expression_attribute_values(":version", N(version.number().to_string()));
             }
 
             // filters are processed after key matches and we're going in reverse so we want the
@@ -138,12 +133,7 @@ where
         }
     }
 
-    async fn save(
-        &self,
-        id: &T,
-        mut version: Version,
-        snapshot: Box<dyn Snapshot>,
-    ) -> Result<(), SnapshotError> {
+    async fn save(&self, id: &T, mut version: Version, snapshot: Box<dyn Snapshot>) -> Result<(), SnapshotError> {
         if version != Default::default()
             && let Some(mask) = self.options.mask()
         {

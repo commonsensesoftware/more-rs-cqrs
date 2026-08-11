@@ -136,10 +136,7 @@ impl<'a> TryFrom<Context<'a>> for Projector<'a> {
                 events: Default::default(),
             })
         } else {
-            Err(Error::new(
-                context.target().span(),
-                "missing expected event store",
-            ))
+            Err(Error::new(context.target().span(), "missing expected event store"))
         }
     }
 }
@@ -320,8 +317,7 @@ fn get_metadata(items: &mut [Item]) -> Result<Vec<Metadata>> {
                     if let Some(name) = &field.ident {
                         if meta.output.is_none() && name == &Ident::new("output", name.span()) {
                             meta.output = Some(i);
-                        } else if meta.store.is_none() && name == &Ident::new("store", name.span())
-                        {
+                        } else if meta.store.is_none() && name == &Ident::new("store", name.span()) {
                             meta.store = Some(i);
                         }
                     }

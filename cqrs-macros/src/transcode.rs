@@ -67,9 +67,10 @@ pub(crate) fn expand(attribute: TranscodeAttribute, input: TokenStream) -> Token
                 .iter()
                 .filter_map(|item| {
                     if let Item::Struct(struct_) = item
-                        && struct_.attrs.iter().any(|attr| {
-                            attr.path().is_ident("event") || attr.path().is_ident("snapshot")
-                        })
+                        && struct_
+                            .attrs
+                            .iter()
+                            .any(|attr| attr.path().is_ident("event") || attr.path().is_ident("snapshot"))
                     {
                         return Some(struct_);
                     }
@@ -81,10 +82,7 @@ pub(crate) fn expand(attribute: TranscodeAttribute, input: TokenStream) -> Token
                 .iter()
                 .filter_map(|item| {
                     if let Item::Struct(struct_) = item
-                        && struct_
-                            .attrs
-                            .iter()
-                            .any(|attr| attr.path().is_ident("snapshot"))
+                        && struct_.attrs.iter().any(|attr| attr.path().is_ident("snapshot"))
                     {
                         return Some(struct_);
                     }

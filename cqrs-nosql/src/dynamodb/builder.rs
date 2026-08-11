@@ -130,11 +130,7 @@ impl<ID, M: Message + ?Sized> Builder<ID, M> {
             } else {
                 use aws_config::{BehaviorVersion, meta::region::RegionProviderChain};
                 let region = RegionProviderChain::default_provider();
-                executor::block_on(
-                    aws_config::defaults(BehaviorVersion::latest())
-                        .region(region)
-                        .load(),
-                )
+                executor::block_on(aws_config::defaults(BehaviorVersion::latest()).region(region).load())
             };
 
             Ok(Client::new(&config))

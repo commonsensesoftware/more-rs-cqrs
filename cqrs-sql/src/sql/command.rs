@@ -8,11 +8,7 @@ where
 {
     let mut delete = QueryBuilder::new("DELETE FROM ");
 
-    delete
-        .push(table.quote())
-        .push(" WHERE id = ")
-        .push_bind(id)
-        .push(';');
+    delete.push(table.quote()).push(" WHERE id = ").push_bind(id).push(';');
 
     delete
 }

@@ -1,6 +1,6 @@
 use rc2::{
-    cipher::{Array, BlockCipherDecrypt, BlockCipherEncrypt, InvalidLength},
     Rc2,
+    cipher::{Array, BlockCipherDecrypt, BlockCipherEncrypt, InvalidLength},
 };
 use uuid::Uuid;
 
@@ -97,12 +97,12 @@ impl SecureMask {
     /// Creates a new key.
     pub fn new_key() -> [u8; 64] {
         let mut key = [0u8; 64];
-        
+
         key[00..16].copy_from_slice(&Uuid::new_v4().to_bytes_le());
         key[16..32].copy_from_slice(&Uuid::new_v4().to_bytes_le());
         key[32..48].copy_from_slice(&Uuid::new_v4().to_bytes_le());
         key[48..64].copy_from_slice(&Uuid::new_v4().to_bytes_le());
-        
+
         key
     }
 
@@ -115,7 +115,7 @@ impl SecureMask {
 
 impl Mask for SecureMask {
     fn mask(&self, data: [u8; 8]) -> [u8; 8] {
-        let mut array  = Array::from(data);
+        let mut array = Array::from(data);
         self.0.encrypt_block(&mut array);
         array.into()
     }

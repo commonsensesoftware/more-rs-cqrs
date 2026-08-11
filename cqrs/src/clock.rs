@@ -56,8 +56,7 @@ impl VirtualClock {
     /// * `when` - the [date and time](SystemTime) to set the clock to
     pub fn set(&self, when: SystemTime) {
         let then = SystemTime::now();
-        *self.0.write().unwrap() =
-            Arc::new(move || when + SystemTime::now().duration_since(then).unwrap());
+        *self.0.write().unwrap() = Arc::new(move || when + SystemTime::now().duration_since(then).unwrap());
     }
 
     /// Winds the clock forward by the specific amount of time.
@@ -226,10 +225,7 @@ mod test {
         // act
         clock.set(yesterday);
         sleep(Duration::from_millis(250));
-        let elapsed = SystemTime::now()
-            .duration_since(clock.now())
-            .unwrap()
-            .as_millis();
+        let elapsed = SystemTime::now().duration_since(clock.now()).unwrap().as_millis();
 
         // assert
         assert!(elapsed > 0 && elapsed < 86400250);

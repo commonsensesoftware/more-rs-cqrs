@@ -14,10 +14,7 @@ impl<T> Saved<T> {
     /// * `message` - The versioned [message](super::Message)
     /// * `version` - The message [version](Version)
     pub fn new(message: T, version: Version) -> Self {
-        Self {
-            message,
-            version,
-        }
+        Self { message, version }
     }
 
     /// Gets the [message](super::Message).

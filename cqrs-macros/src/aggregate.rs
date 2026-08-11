@@ -51,31 +51,23 @@ fn implement_struct(mut struct_: ItemStruct, attribute: &AggregateAttribute) -> 
         fields
             .named
             .push(Field::parse_named.parse2(quote! { id: #id }).unwrap());
-        fields.named.push(
-            Field::parse_named
-                .parse2(quote! { version: cqrs::Version })
-                .unwrap(),
-        );
+        fields
+            .named
+            .push(Field::parse_named.parse2(quote! { version: cqrs::Version }).unwrap());
         fields.named.push(
             Field::parse_named
                 .parse2(quote! { events: Vec<Box<dyn cqrs::event::Event>> })
                 .unwrap(),
         );
-        fields.named.push(
-            Field::parse_named
-                .parse2(quote! { clock: cqrs::ClockHolder })
-                .unwrap(),
-        );
+        fields
+            .named
+            .push(Field::parse_named.parse2(quote! { clock: cqrs::ClockHolder }).unwrap());
     }
 
     quote! { #struct_ }
 }
 
-fn implement_trait(
-    mut output: TokenStream,
-    impl_: &ItemImpl,
-    attribute: &AggregateAttribute,
-) -> Result<TokenStream> {
+fn implement_trait(mut output: TokenStream, impl_: &ItemImpl, attribute: &AggregateAttribute) -> Result<TokenStream> {
     if let Type::Path(type_) = &*impl_.self_ty {
         let struct_ = &type_.path;
         let id = &attribute.id;
@@ -325,10 +317,7 @@ fn get_snapshot_function(impl_: &ItemImpl) -> Result<Option<TokenStream>> {
 
     if let Some(func) = snapshot {
         if func.sig.inputs.len() > 1 {
-            return Err(Error::new(
-                func.span(),
-                "snapshot function cannot have parameters",
-            ));
+            return Err(Error::new(func.span(), "snapshot function cannot have parameters"));
         }
 
         if let ReturnType::Type(_, ty) = &func.sig.output {
@@ -363,15 +352,9 @@ fn get_snapshot_function(impl_: &ItemImpl) -> Result<Option<TokenStream>> {
                 }
             }
 
-            Err(Error::new(
-                func.span(),
-                "unexpected snapshot function return value",
-            ))
+            Err(Error::new(func.span(), "unexpected snapshot function return value"))
         } else {
-            Err(Error::new(
-                func.span(),
-                "snapshot function must return a value",
-            ))
+            Err(Error::new(func.span(), "snapshot function must return a value"))
         }
     } else {
         Ok(None)

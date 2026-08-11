@@ -6,7 +6,7 @@ pub use event_store::EventStore;
 pub use snapshot_store::SnapshotStore;
 
 use crate::{snapshot, sql};
-use cqrs::{snapshot::Retention, Clock};
+use cqrs::{Clock, snapshot::Retention};
 use sqlx::{Encode, QueryBuilder, Sqlite, Type};
 use std::time::UNIX_EPOCH;
 
@@ -40,9 +40,7 @@ where
         if let Some(count) = retention.count {
             if let Some(age) = retention.age {
                 let taken_on = (clock.now() - age).duration_since(UNIX_EPOCH).unwrap();
-                delete
-                    .push(" AND taken_on >= ")
-                    .push_bind(taken_on.as_secs() as i64);
+                delete.push(" AND taken_on >= ").push_bind(taken_on.as_secs() as i64);
             }
 
             delete
@@ -50,9 +48,7 @@ where
                 .push_bind(count as i16);
         } else if let Some(age) = retention.age {
             let taken_on = (clock.now() - age).duration_since(UNIX_EPOCH).unwrap();
-            delete
-                .push(" AND taken_on <= ")
-                .push_bind(taken_on.as_secs() as i64);
+            delete.push(" AND taken_on <= ").push_bind(taken_on.as_secs() as i64);
         }
 
         delete.push(';');

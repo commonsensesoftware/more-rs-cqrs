@@ -9,10 +9,7 @@ pub(crate) struct SnapshotAttribute {
 
 impl Default for SnapshotAttribute {
     fn default() -> Self {
-        Self {
-            kind: None,
-            version: 1,
-        }
+        Self { kind: None, version: 1 }
     }
 }
 

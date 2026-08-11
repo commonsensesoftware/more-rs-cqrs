@@ -10,9 +10,7 @@ use thiserror::Error;
 
 #[inline]
 fn to_secs(time: SystemTime) -> u64 {
-    time.duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
+    time.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
 }
 
 #[inline]

@@ -1,5 +1,5 @@
 use super::domain::Account;
-use cqrs::{snapshot, Aggregate, Repository};
+use cqrs::{Aggregate, Repository, snapshot};
 use std::error::Error;
 
 pub async fn open_new_account(

@@ -1,4 +1,4 @@
-use crate::{event, Version};
+use crate::{Version, event};
 use std::{
     fmt::Debug,
     ops::{Bound, Bound::Unbounded},

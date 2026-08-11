@@ -5,7 +5,11 @@ use common::{
     domain::{self, Account},
     projector::StatementGenerator,
 };
-use cqrs::{Repository, RepositoryError, VirtualClock, event::{Store, StoreOptions}, in_memory::EventStore};
+use cqrs::{
+    Repository, RepositoryError, VirtualClock,
+    event::{Store, StoreOptions},
+    in_memory::EventStore,
+};
 use std::sync::Arc;
 
 #[tokio::test]

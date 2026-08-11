@@ -96,13 +96,7 @@ impl Order {
         }
     }
 
-    pub fn ship_to<S: Into<String>>(
-        &mut self,
-        date: SystemTime,
-        street: S,
-        region: S,
-        postal_code: S,
-    ) -> OrderResult {
+    pub fn ship_to<S: Into<String>>(&mut self, date: SystemTime, street: S, region: S, postal_code: S) -> OrderResult {
         match self.state {
             State::Drafted => {
                 self.record(AddressUpdated::to(
@@ -120,12 +114,7 @@ impl Order {
         }
     }
 
-    pub fn checkout<S: Into<String>>(
-        &mut self,
-        date: SystemTime,
-        amount: f32,
-        transaction_id: S,
-    ) -> OrderResult {
+    pub fn checkout<S: Into<String>>(&mut self, date: SystemTime, amount: f32, transaction_id: S) -> OrderResult {
         match self.state {
             State::Drafted => {
                 let total = self.items.iter().map(|i| i.price * i.quantity as f32).sum();

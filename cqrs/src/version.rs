@@ -1,5 +1,8 @@
 use crate::Mask;
-use std::{array::TryFromSliceError, fmt::{self, Debug, Formatter, Result as FormatResult}};
+use std::{
+    array::TryFromSliceError,
+    fmt::{self, Debug, Formatter, Result as FormatResult},
+};
 
 /// Represents an entity version.
 ///
