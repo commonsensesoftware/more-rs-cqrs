@@ -108,38 +108,33 @@ where
     }
 }
 
-cfg_select! {
-    feature = "di" => {
-        use di::{inject, injectable, Ref};
+
+#[cfg_attr(feature = "di", di::injectable(StoreMigration))]
+impl<DB> SqlStoreMigrator<DB>
+where
+    DB: Database,
+    DB::Connection: Migrate,
+{
+    #[cfg_attr(feature = "di", di::inject)]
+    fn _new(migrations: impl Iterator<Item = di::Ref<SqlStoreMigration<DB>>>) -> Self {
         use std::collections::HashMap;
 
-        #[injectable(StoreMigration)]
-        impl<DB> SqlStoreMigrator<DB>
-        where
-            DB: Database,
-            DB::Connection: Migrate,
-        {
-            #[inject]
-            fn _new(migrations: impl Iterator<Item = Ref<SqlStoreMigration<DB>>>) -> Self {
-                let mut migrations: Vec<_> = migrations.filter_map(Ref::into_inner).collect();
-                let count = migrations.len();
-                let mut buckets: HashMap<String, SqlStoreMigration<DB>> = HashMap::with_capacity(count);
+        let mut migrations: Vec<_> = migrations.filter_map(di::Ref::into_inner).collect();
+        let count = migrations.len();
+        let mut buckets: HashMap<String, SqlStoreMigration<DB>> = HashMap::with_capacity(count);
 
-                for migration in migrations.drain(..) {
-                    let key = migration.key().into_owned();
+        for migration in migrations.drain(..) {
+            let key = migration.key().into_owned();
 
-                    if buckets.contains_key(&key) {
-                        buckets.entry(key).and_modify(|m| m.merge(migration));
-                    } else {
-                        buckets.entry(key).or_insert(migration);
-                    }
-                }
-
-                Self {
-                    migrations: Mutex::new(buckets.into_values().collect()),
-                }
+            if buckets.contains_key(&key) {
+                buckets.entry(key).and_modify(|m| m.merge(migration));
+            } else {
+                buckets.entry(key).or_insert(migration);
             }
         }
+
+        Self {
+            migrations: Mutex::new(buckets.into_values().collect()),
+        }
     }
-    _ => {}
 }
