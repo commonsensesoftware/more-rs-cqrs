@@ -175,21 +175,14 @@ where
     }
 }
 
-cfg_select! {
-    feature = "di" => {
-        use di::{inject, injectable, KeyedRef};
-
-        #[injectable]
-        impl<A> Repository<A>
-        where
-            A: Aggregate + Default + Sync + 'static,
-            A::ID: Clone + Debug + Send + Sync + 'static,
-        {
-            #[inject]
-            fn _new(store: KeyedRef<A, dyn Store<A::ID>>) -> Self {
-                Self { store: store.into() }
-            }
-        }
+#[cfg_attr(feature = "di", di::injectable)]
+impl<A> Repository<A>
+where
+    A: Aggregate + Default + Sync + 'static,
+    A::ID: Clone + Debug + Send + Sync + 'static,
+{
+    #[cfg_attr(feature = "di", di::inject)]
+    fn _new(store: di::KeyedRef<A, dyn Store<A::ID>>) -> Self {
+        Self { store: store.into() }
     }
-    _ => {}
 }

@@ -48,19 +48,12 @@ impl StoreMigrator {
     }
 }
 
-cfg_select! {
-    feature = "di" => {
-        use di::{inject, injectable, Ref};
-
-        #[injectable]
-        impl StoreMigrator {
-            #[inject]
-            fn _new(migrations: Vec<Ref<dyn StoreMigration>>) -> Self {
-                Self {
-                    migrations: Mutex::new(migrations),
-                }
-            }
+#[cfg_attr(feature = "di", di::injectable)]
+impl StoreMigrator {
+    #[cfg_attr(feature = "di", di::inject)]
+    fn _new(migrations: Vec<di::Ref<dyn StoreMigration>>) -> Self {
+        Self {
+            migrations: Mutex::new(migrations),
         }
     }
-    _ => {}
 }
