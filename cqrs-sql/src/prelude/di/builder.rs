@@ -2,13 +2,14 @@ use super::{DynEventStore, DynSnapshotStore, SqlOptions, merge};
 use crate::{
     event,
     snapshot::{self, Prune, Upsert},
+    sql::Provider,
 };
 use cqrs::{
     Aggregate, Clock, Mask, Repository, event::Event, message::Transcoder, snapshot::Snapshot,
 };
 use di::{
     Ref, ServiceCollection, exactly_one, exactly_one_with_key, singleton_as_self,
-    singleton_with_key, zero_or_one, zero_or_one_with_key,
+    singleton_with_key, singleton_with_key_factory, zero_or_one, zero_or_one_with_key,
 };
 use options::Snapshot as OptionsSnapshot;
 use sqlx::{
@@ -22,7 +23,7 @@ pub struct SqlStoreBuilder<'a, A, DB: Database>
 where
     A: Aggregate + Default + Sync + 'static,
     A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-    DB: Database,
+    DB: Database + Provider,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
@@ -44,7 +45,7 @@ impl<'a, A, DB> SqlStoreBuilder<'a, A, DB>
 where
     A: Aggregate + Default + Sync + 'static,
     A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-    DB: Database,
+    DB: Database + Provider,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
@@ -90,7 +91,7 @@ impl<'a, A, DB> Drop for SqlStoreBuilder<'a, A, DB>
 where
     A: Aggregate + Default + Sync + 'static,
     A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-    DB: Database,
+    DB: Database + Provider,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
@@ -105,37 +106,45 @@ where
     fn drop(&mut self) {
         let name = self.name;
 
-        self.services.try_add(
-            singleton_with_key::<A, DynEventStore<A::ID>, event::SqlStore<A::ID, DB>>()
-                .depends_on(zero_or_one::<dyn Mask>())
-                .depends_on(exactly_one::<dyn Clock>())
-                .depends_on(exactly_one::<Transcoder<dyn Event>>())
-                .depends_on(zero_or_one_with_key::<A, DynSnapshotStore<A::ID>>())
-                .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<DB>>>())
-                .from(|sp| {
-                    let options = sp.get::<dyn OptionsSnapshot<SqlOptions<DB>>>();
-                    let mut builder = event::SqlStore::<A::ID, DB>::builder()
-                        .table(name)
-                        .clock(sp.get_required::<dyn Clock>())
-                        .transcoder(sp.get_required::<Transcoder<dyn Event>>());
+        self.services
+            .try_add(
+                singleton_with_key::<A, event::SqlStore<A::ID, DB>, event::SqlStore<A::ID, DB>>()
+                    .depends_on(zero_or_one::<dyn Mask>())
+                    .depends_on(exactly_one::<dyn Clock>())
+                    .depends_on(exactly_one::<Transcoder<dyn Event>>())
+                    .depends_on(zero_or_one_with_key::<A, DynSnapshotStore<A::ID>>())
+                    .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<DB>>>())
+                    .from(|sp| {
+                        let options = sp.get::<dyn OptionsSnapshot<SqlOptions<DB>>>();
+                        let mut builder = event::SqlStore::<A::ID, DB>::builder()
+                            .table(name)
+                            .clock(sp.get_required::<dyn Clock>())
+                            .transcoder(sp.get_required::<Transcoder<dyn Event>>());
 
-                    if let Some(mask) = sp.get::<dyn Mask>() {
-                        builder = builder.mask(mask);
-                    }
-
-                    if let Some(snapshot) = &options
-                        && let Ok(db) = snapshot.get_named(name)
-                    {
-                        if !db.url.is_empty() {
-                            builder = builder.url(db.url.clone());
+                        if let Some(mask) = sp.get::<dyn Mask>() {
+                            builder = builder.mask(mask);
                         }
 
-                        builder = builder.options(db.options.clone());
-                    }
+                        if let Some(snapshot) = &options
+                            && let Ok(db) = snapshot.get_named(name)
+                        {
+                            if !db.url.is_empty() {
+                                builder = builder.url(db.url.clone());
+                            }
 
-                    Ref::new(builder.build().unwrap())
-                }),
-        );
+                            builder = builder.options(db.options.clone());
+                        }
+
+                        Ref::new(builder.build().unwrap())
+                    }),
+            )
+            .try_add(singleton_with_key_factory::<A, DynEventStore<A::ID>, _>(
+                |sp| {
+                    Ref::<event::SqlStore<A::ID, DB>>::from(
+                        sp.get_required_by_key::<A, event::SqlStore<A::ID, DB>>(),
+                    ) as Ref<DynEventStore<A::ID>>
+                },
+            ));
     }
 }
 
@@ -144,7 +153,7 @@ pub struct SqlStoreOptionsBuilder<'a, A, DB: Database>
 where
     A: Aggregate + Default + Sync + 'static,
     A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-    DB: Database,
+    DB: Database + Provider,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
@@ -169,7 +178,7 @@ impl<'a, A, DB> SqlStoreOptionsBuilder<'a, A, DB>
 where
     A: Aggregate + Default + Sync + 'static,
     A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-    DB: Database,
+    DB: Database + Provider,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
@@ -265,7 +274,7 @@ impl<'a, A, DB> SqlStoreOptionsBuilder<'a, A, DB>
 where
     A: Aggregate + Default + Sync + 'static,
     A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-    DB: Database + for<'db> Prune<'db, A::ID, DB> + Upsert,
+    DB: Database + Provider + for<'db> Prune<'db, A::ID, DB> + Upsert,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
@@ -291,8 +300,14 @@ where
         let mask = self.mask.take().map(Arc::from);
 
         self.use_snapshots = true;
-        self.parent.services.try_add(
-            singleton_with_key::<A, DynSnapshotStore<A::ID>, snapshot::SqlStore<A::ID, DB>>()
+        self.parent
+            .services
+            .try_add(
+                singleton_with_key::<
+                    A,
+                    snapshot::SqlStore<A::ID, DB>,
+                    snapshot::SqlStore<A::ID, DB>,
+                >()
                 .depends_on(zero_or_one::<dyn Mask>())
                 .depends_on(exactly_one::<dyn Clock>())
                 .depends_on(exactly_one::<Transcoder<dyn Snapshot>>())
@@ -316,7 +331,14 @@ where
 
                     Ref::new(builder.build().unwrap())
                 }),
-        );
+            )
+            .try_add(singleton_with_key_factory::<A, DynSnapshotStore<A::ID>, _>(
+                |sp| {
+                    Ref::<snapshot::SqlStore<A::ID, DB>>::from(
+                        sp.get_required_by_key::<A, snapshot::SqlStore<A::ID, DB>>(),
+                    ) as Ref<DynSnapshotStore<A::ID>>
+                },
+            ));
 
         self
     }
@@ -326,7 +348,7 @@ impl<'a, A, DB> Drop for SqlStoreOptionsBuilder<'a, A, DB>
 where
     A: Aggregate + Default + Sync + 'static,
     A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-    DB: Database,
+    DB: Database + Provider,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,
@@ -346,46 +368,55 @@ where
         let enforce_concurrency = self.enforce_concurrency;
         let allow_delete = self.allow_delete;
 
-        self.parent.services.try_add(
-            singleton_with_key::<A, DynEventStore<A::ID>, event::SqlStore<A::ID, DB>>()
-                .depends_on(zero_or_one::<dyn Mask>())
-                .depends_on(exactly_one::<dyn Clock>())
-                .depends_on(exactly_one::<Transcoder<dyn Event>>())
-                .depends_on(zero_or_one_with_key::<A, DynSnapshotStore<A::ID>>())
-                .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<DB>>>())
-                .from(move |sp| {
-                    let di_options = sp.get::<dyn OptionsSnapshot<SqlOptions<DB>>>();
-                    let mut builder = merge(
-                        event::SqlStore::<A::ID, DB>::builder()
-                            .table(name)
-                            .clock(sp.get_required::<dyn Clock>())
-                            .transcoder(sp.get_required::<Transcoder<dyn Event>>()),
-                        name,
-                        url.as_deref(),
-                        cfg_options.as_ref(),
-                        di_options.as_ref(),
-                    );
+        self.parent
+            .services
+            .try_add(
+                singleton_with_key::<A, event::SqlStore<A::ID, DB>, event::SqlStore<A::ID, DB>>()
+                    .depends_on(zero_or_one::<dyn Mask>())
+                    .depends_on(exactly_one::<dyn Clock>())
+                    .depends_on(exactly_one::<Transcoder<dyn Event>>())
+                    .depends_on(zero_or_one_with_key::<A, DynSnapshotStore<A::ID>>())
+                    .depends_on(zero_or_one::<dyn OptionsSnapshot<SqlOptions<DB>>>())
+                    .from(move |sp| {
+                        let di_options = sp.get::<dyn OptionsSnapshot<SqlOptions<DB>>>();
+                        let mut builder = merge(
+                            event::SqlStore::<A::ID, DB>::builder()
+                                .table(name)
+                                .clock(sp.get_required::<dyn Clock>())
+                                .transcoder(sp.get_required::<Transcoder<dyn Event>>()),
+                            name,
+                            url.as_deref(),
+                            cfg_options.as_ref(),
+                            di_options.as_ref(),
+                        );
 
-                    if let Some(snapshots) = sp.get_by_key::<A, DynSnapshotStore<A::ID>>() {
-                        builder =
-                            builder.snapshots(Ref::<DynSnapshotStore<A::ID>>::from(snapshots));
-                    }
+                        if let Some(snapshots) = sp.get_by_key::<A, DynSnapshotStore<A::ID>>() {
+                            builder =
+                                builder.snapshots(Ref::<DynSnapshotStore<A::ID>>::from(snapshots));
+                        }
 
-                    if let Some(mask) = mask.clone().or_else(|| sp.get::<dyn Mask>()) {
-                        builder = builder.mask(mask);
-                    }
+                        if let Some(mask) = mask.clone().or_else(|| sp.get::<dyn Mask>()) {
+                            builder = builder.mask(mask);
+                        }
 
-                    if enforce_concurrency {
-                        builder = builder.enforce_concurrency();
-                    }
+                        if enforce_concurrency {
+                            builder = builder.enforce_concurrency();
+                        }
 
-                    if allow_delete {
-                        builder = builder.with_deletes();
-                    }
+                        if allow_delete {
+                            builder = builder.with_deletes();
+                        }
 
-                    Ref::new(builder.build().unwrap())
-                }),
-        );
+                        Ref::new(builder.build().unwrap())
+                    }),
+            )
+            .try_add(singleton_with_key_factory::<A, DynEventStore<A::ID>, _>(
+                |sp| {
+                    Ref::<event::SqlStore<A::ID, DB>>::from(
+                        sp.get_required_by_key::<A, event::SqlStore<A::ID, DB>>(),
+                    ) as Ref<DynEventStore<A::ID>>
+                },
+            ));
     }
 }
 
@@ -398,7 +429,7 @@ cfg_select! {
         where
             A: Aggregate + Default + Sync + 'static,
             A::ID: Clone + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Sync + Type<DB>,
-            DB: Database + Upsert,
+            DB: Database + Provider + Upsert,
             <DB as Database>::Connection: Migrate,
             <DB as Database>::Arguments: IntoArguments<DB>,
             for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,

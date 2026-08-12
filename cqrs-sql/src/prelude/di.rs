@@ -41,16 +41,12 @@ where
     builder
 }
 
-cfg_select! {
-    any(feature = "mysql", feature = "postgres") => {
-        mod builder;
-        pub use builder::{SqlStoreBuilder, SqlStoreOptionsBuilder};
-    }
-    _ => {}
-}
+mod builder;
+
+pub use builder::{SqlStoreBuilder, SqlStoreOptionsBuilder};
 
 cfg_select! {
-    all(any(feature = "mysql", feature = "postgres"), feature = "migrate") => {
+    feature = "migrate" => {
         mod migration;
         pub use migration::SqlMigrationsBuilder;
     }

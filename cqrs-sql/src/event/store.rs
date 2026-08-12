@@ -258,14 +258,18 @@ where
             return Err(StoreError::Unsupported);
         }
 
+        // the snapshot store owns its own connection and transaction, so pruning from inside this
+        // transaction is a nested transaction which, especially in an async context, can cause a
+        // database such as SQLite to deadlock. snapshots are intrinsically volatile so delete them
+        // first. if deleting the events somehow fails, things are still in a recoverable state
+        if let Some(snapshots) = self.options.snapshots() {
+            snapshots.prune(id, None).await?;
+        }
+
         let mut db = self.pool.acquire().await.box_err()?;
         let mut tx = db.begin().await.box_err()?;
         let mut delete = sql::command::delete(&self.table, id);
         let _ = delete.build().execute(&mut *tx).await.box_err()?;
-
-        if let Some(snapshots) = self.options.snapshots() {
-            snapshots.prune(id, None).await?;
-        }
 
         tx.commit().await.box_err()?;
         Ok(())

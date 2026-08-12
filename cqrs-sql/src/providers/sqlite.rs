@@ -1,14 +1,14 @@
-mod command;
-mod event_store;
-mod snapshot_store;
-
-pub use event_store::EventStore;
-pub use snapshot_store::SnapshotStore;
-
-use crate::{snapshot, sql};
+use crate::{event, snapshot, sql};
 use cqrs::{Clock, snapshot::Retention};
 use sqlx::{Encode, QueryBuilder, Sqlite, Type};
 use std::time::UNIX_EPOCH;
+
+impl sql::Provider for Sqlite {
+    // SQLite has no notion of a schema, so "events"."orders" is folded into events_orders
+    fn supports_schemas() -> bool {
+        false
+    }
+}
 
 impl snapshot::Upsert for Sqlite {
     fn on_conflict() -> &'static str {
@@ -55,6 +55,12 @@ where
         delete
     }
 }
+
+/// Represents a SQLite [event store](event::SqlStore).
+pub type EventStore<ID> = event::SqlStore<ID, Sqlite>;
+
+/// Represents a SQLite [snapshot store](snapshot::SqlStore).
+pub type SnapshotStore<ID> = snapshot::SqlStore<ID, Sqlite>;
 
 cfg_select! {
     feature = "migrate" => {

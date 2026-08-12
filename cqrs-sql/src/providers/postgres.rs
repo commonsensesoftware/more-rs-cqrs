@@ -3,6 +3,8 @@ use cqrs::{Clock, snapshot::Retention};
 use sqlx::{Encode, Postgres, QueryBuilder, Type};
 use std::time::UNIX_EPOCH;
 
+impl sql::Provider for Postgres {}
+
 impl snapshot::Upsert for Postgres {
     fn on_conflict() -> &'static str {
         concat!(

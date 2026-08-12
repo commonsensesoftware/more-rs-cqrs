@@ -3,6 +3,8 @@ use cqrs::{Clock, snapshot::Retention};
 use sqlx::{Encode, MySql, QueryBuilder, Type};
 use std::time::UNIX_EPOCH;
 
+impl sql::Provider for MySql {}
+
 impl snapshot::Upsert for MySql {
     fn on_conflict() -> &'static str {
         concat!(

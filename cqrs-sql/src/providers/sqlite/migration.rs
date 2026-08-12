@@ -14,9 +14,9 @@ impl<ID> From<&sqlite::EventStore<ID>> for Migration {
     fn from(value: &sqlite::EventStore<ID>) -> Self {
         Self::new(
             1,
-            Cow::Owned(format!("'{}' events table.", value.table().name())),
+            Cow::Owned(format!("'{}' events table.", value.table.name())),
             Simple,
-            AssertSqlSafe(events_table(&value.table(), db_type::<ID>())).into_sql_str(),
+            AssertSqlSafe(events_table(&value.table, db_type::<ID>())).into_sql_str(),
             false,
         )
     }
@@ -26,9 +26,9 @@ impl<ID> From<&sqlite::SnapshotStore<ID>> for Migration {
     fn from(value: &sqlite::SnapshotStore<ID>) -> Self {
         Self::new(
             1,
-            Cow::Owned(format!("'{}' snapshots table.", value.table().name())),
+            Cow::Owned(format!("'{}' snapshots table.", value.table.name())),
             Simple,
-            AssertSqlSafe(snapshots_table(&value.table(), db_type::<ID>())).into_sql_str(),
+            AssertSqlSafe(snapshots_table(&value.table, db_type::<ID>())).into_sql_str(),
             false,
         )
     }
