@@ -6,7 +6,7 @@ use sqlx::{
     pool::PoolOptions,
     Database,
 };
-use std::{collections::HashMap, error::Error, sync::Mutex};
+use std::{error::Error, sync::Mutex};
 
 /// Represents a SQL-base storage migrator.
 pub struct SqlStoreMigrator<DB>
@@ -70,7 +70,7 @@ where
         let mut migrations = self.migrations.lock().unwrap();
 
         for existing in migrations.iter_mut() {
-            if existing.version() == migration.version() && existing.url() == migration.url() {
+            if existing.version() == migration.version() && existing.key() == migration.key() {
                 existing.merge(migration);
                 return;
             }
@@ -111,6 +111,7 @@ where
 cfg_select! {
     feature = "di" => {
         use di::{inject, injectable, Ref};
+        use std::collections::HashMap;
 
         #[injectable(StoreMigration)]
         impl<DB> SqlStoreMigrator<DB>
@@ -125,7 +126,7 @@ cfg_select! {
                 let mut buckets: HashMap<String, SqlStoreMigration<DB>> = HashMap::with_capacity(count);
 
                 for migration in migrations.drain(..) {
-                    let key = migration.url().to_owned();
+                    let key = migration.key().into_owned();
 
                     if buckets.contains_key(&key) {
                         buckets.entry(key).and_modify(|m| m.merge(migration));

@@ -37,7 +37,7 @@ pub enum IdentPart {
 
 /// Represents a SQL identifier.
 #[derive(Clone, PartialEq, Eq)]
-pub struct Ident<'a>(Option<&'a str>, &'a str);
+pub struct Ident<'a>(Option<Cow<'a, str>>, Cow<'a, str>);
 
 impl<'a> Ident<'a> {
     /// Creates and returns a new unqualified identifier.
@@ -45,8 +45,8 @@ impl<'a> Ident<'a> {
     /// # Arguments
     ///
     /// * `name` - the object name
-    pub fn unqualified<S: ?Sized + AsRef<str> + 'a>(name: &'a S) -> Self {
-        Self(None, name.as_ref())
+    pub fn unqualified<S: Into<Cow<'a, str>>>(name: S) -> Self {
+        Self(None, name.into())
     }
 
     /// Creates and returns a new qualified identifier.
@@ -55,23 +55,23 @@ impl<'a> Ident<'a> {
     ///
     /// * `schema` - the schema name
     /// * `name` - the object name
-    pub fn qualified<S: ?Sized + AsRef<str> + 'a>(schema: &'a S, name: &'a S) -> Self {
-        Self(Some(schema.as_ref()), name.as_ref())
+    pub fn qualified<S1: Into<Cow<'a, str>>, S2: Into<Cow<'a, str>>>(schema: S1, name: S2) -> Self {
+        Self(Some(schema.into()), name.into())
     }
 
     /// Gets the associated schema name, if any.
     pub fn schema(&self) -> Option<&str> {
-        self.0
+        self.0.as_deref()
     }
 
     /// Gets the object identifier name.
     pub fn name(&self) -> &str {
-        self.1
+        &self.1
     }
 
     /// Returns the full identifier name, including quotes if necessary.
     #[inline]
-    pub fn quote(&self) -> Cow<'a, str> {
+    pub fn quote(&self) -> Cow<'_, str> {
         self._quote(None)
     }
 
@@ -81,7 +81,7 @@ impl<'a> Ident<'a> {
     ///
     /// * `part` - the [part](IdentPart) to quote
     #[inline]
-    pub fn quote_part(&self, part: IdentPart) -> Option<Cow<'a, str>> {
+    pub fn quote_part(&self, part: IdentPart) -> Option<Cow<'_, str>> {
         if part == IdentPart::Schema && self.0.is_none() {
             None
         } else {
@@ -89,12 +89,12 @@ impl<'a> Ident<'a> {
         }
     }
 
-    fn _quote(&self, part: Option<IdentPart>) -> Cow<'a, str> {
+    fn _quote(&self, part: Option<IdentPart>) -> Cow<'_, str> {
         let mut quoted = String::new();
         let full = part.is_none();
 
         if (full || part == Some(IdentPart::Schema))
-            && let Some(schema) = self.0
+            && let Some(schema) = self.schema()
         {
             if all_allowed(schema) {
                 if full {
@@ -115,15 +115,15 @@ impl<'a> Ident<'a> {
 
         if (full || part == Some(IdentPart::Object)) && !self.1.is_empty() {
             if quoted.is_empty() {
-                if all_allowed(self.1) {
-                    return Cow::Borrowed(self.1);
+                if all_allowed(&self.1) {
+                    return Cow::Borrowed(&self.1);
                 }
             } else {
                 quoted.push('.');
             }
 
             quoted.push(DBL_QUOTE);
-            quoted.push_str(self.1);
+            quoted.push_str(&self.1);
             quoted.push(DBL_QUOTE);
         }
 
@@ -137,7 +137,7 @@ impl<'a> Ident<'a> {
     /// Returns the identifier as an object name for use in prefixes and suffixes of other database
     /// objects, such as indexes. The name `"events"."my-events"` is returned as `events_my_events`.
     #[inline]
-    pub fn as_object_name(&self) -> Cow<'a, str> {
+    pub fn as_object_name(&self) -> Cow<'_, str> {
         self._as_object_name(None)
     }
 
@@ -148,22 +148,22 @@ impl<'a> Ident<'a> {
     /// Returns part of the identifier as an object name for use in prefixes and suffixes of other database
     /// objects, such as indexes. The [IdentPart::Object] `"my-events"` is returned as `my_events`.
     #[inline]
-    pub fn part_as_object_name(&self, part: IdentPart) -> Cow<'a, str> {
+    pub fn part_as_object_name(&self, part: IdentPart) -> Cow<'_, str> {
         self._as_object_name(Some(part))
     }
 
-    fn _as_object_name(&self, part: Option<IdentPart>) -> Cow<'a, str> {
+    fn _as_object_name(&self, part: Option<IdentPart>) -> Cow<'_, str> {
         if let Some(part) = part {
             match part {
                 IdentPart::Object => {
-                    if all_allowed(self.1) {
-                        Cow::Borrowed(self.1)
+                    if all_allowed(&self.1) {
+                        Cow::Borrowed(&self.1)
                     } else {
-                        Cow::Owned(escape(self.1))
+                        Cow::Owned(escape(&self.1))
                     }
                 }
                 IdentPart::Schema => {
-                    if let Some(schema) = self.0 {
+                    if let Some(schema) = self.schema() {
                         if all_allowed(schema) {
                             Cow::Borrowed(schema)
                         } else {
@@ -174,7 +174,7 @@ impl<'a> Ident<'a> {
                     }
                 }
             }
-        } else if let Some(schema) = self.0 {
+        } else if let Some(schema) = self.schema() {
             let mut name = String::with_capacity(schema.len() + self.1.len() + 1);
 
             escape_into(schema, &mut name);
@@ -183,12 +183,12 @@ impl<'a> Ident<'a> {
                 name.push(UNDERSCORE);
             }
 
-            escape_into(self.1, &mut name);
+            escape_into(&self.1, &mut name);
             Cow::Owned(name)
-        } else if all_allowed(self.1) {
-            Cow::Borrowed(self.1)
+        } else if all_allowed(&self.1) {
+            Cow::Borrowed(&self.1)
         } else {
-            Cow::Owned(escape(self.1))
+            Cow::Owned(escape(&self.1))
         }
     }
 }
@@ -205,7 +205,7 @@ mod tests {
     #[case(None, "My Table", "\"My Table\"")]
     fn identifier_should_be_escaped(#[case] schema: Option<&str>, #[case] table: &str, #[case] expected: &str) {
         // arrange
-        let ident = Ident(schema, table);
+        let ident = Ident(schema.map(Cow::Borrowed), Cow::Borrowed(table));
 
         // act
         let name = ident.quote();
@@ -225,7 +225,7 @@ mod tests {
         #[case] expected: Option<&str>,
     ) {
         // arrange
-        let ident = Ident(schema, "My Table");
+        let ident = Ident(schema.map(Cow::Borrowed), Cow::Borrowed("My Table"));
 
         // act
         let name = ident.quote_part(part);
@@ -245,7 +245,7 @@ mod tests {
         #[case] expected: &str,
     ) {
         // arrange
-        let ident = Ident(schema, object);
+        let ident = Ident(schema.map(Cow::Borrowed), Cow::Borrowed(object));
 
         // act
         let name = ident.as_object_name();
@@ -267,7 +267,7 @@ mod tests {
         #[case] expected: &str,
     ) {
         // arrange
-        let ident = Ident(schema, object);
+        let ident = Ident(schema.map(Cow::Borrowed), Cow::Borrowed(object));
 
         // act
         let name = ident.part_as_object_name(part);

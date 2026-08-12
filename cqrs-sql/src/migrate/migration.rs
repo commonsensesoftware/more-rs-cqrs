@@ -1,11 +1,11 @@
 use futures::future::{self, BoxFuture};
 use sqlx::{
+    AssertSqlSafe, Database, Pool, SqlSafeStr,
     error::BoxDynError,
     migrate::{Migrate, MigrateError, Migration, MigrationSource, Migrator},
     pool::PoolOptions,
-    AssertSqlSafe, Database, Pool, SqlSafeStr,
 };
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 enum Either<DB: Database> {
     Pool(Pool<DB>),
@@ -69,6 +69,21 @@ where
     /// Gets the URL representing the database connection string.
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    /// Gets the key identifying the database the migration is applied to.
+    ///
+    /// # Remarks
+    ///
+    /// Migrations with the same [version](Self::version) and key target the same database and must be merged into a
+    /// single migration. A migration created from a [pool](Self::with_pool) is keyed by the identity of the pool
+    /// itself, which is the only way to distinguish two pools connected to the same URL; for example,  two different
+    /// `sqlite::memory:` databases.
+    pub(crate) fn key(&self) -> Cow<'_, str> {
+        match &self.either {
+            Either::Options(_) => Cow::Borrowed(&self.url),
+            Either::Pool(pool) => Cow::Owned(format!("{:p}", Arc::as_ptr(&pool.connect_options()))),
+        }
     }
 
     /// Gets the migration version.

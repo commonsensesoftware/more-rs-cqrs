@@ -1,12 +1,12 @@
 use self::SqlStoreBuilderError::*;
-use crate::{event, snapshot, sql::Ident};
+use crate::{event, snapshot, sql::Provider};
 use cqrs::{
     Clock, Concurrency, Mask, WallClock,
     event::{Delete, Event, StoreOptions as EventStoreOptions},
     message::{Message, Transcoder},
     snapshot::{Snapshot, StoreOptions as SnapshotStoreOptions},
 };
-use sqlx::{Database, pool::PoolOptions};
+use sqlx::{Database, Pool, pool::PoolOptions};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -44,9 +44,7 @@ where
     clock: Option<Arc<dyn Clock>>,
     transcoder: Option<Arc<Transcoder<M>>>,
     snapshots: Option<Arc<DynSnapshotStore<ID>>>,
-
-    #[cfg(feature = "sqlite")]
-    pub(crate) pool: Option<sqlx::Pool<Sqlite>>,
+    pub(crate) pool: Option<Pool<DB>>,
 }
 
 impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Event, DB> {
@@ -62,8 +60,6 @@ impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Event, DB> {
             clock: None,
             transcoder: None,
             snapshots: None,
-
-            #[cfg(feature = "sqlite")]
             pool: None,
         }
     }
@@ -82,8 +78,6 @@ impl<ID, DB: Database> Default for SqlStoreBuilder<ID, dyn Snapshot, DB> {
             clock: None,
             transcoder: None,
             snapshots: None,
-
-            #[cfg(feature = "sqlite")]
             pool: None,
         }
     }
@@ -164,15 +158,29 @@ where
         self
     }
 
-    #[cfg(feature = "sqlite")]
     /// Configures the database connection pool.
     ///
     /// # Arguments
     ///
-    /// * `value` - the [connection pool](sqlx::Pool) for the underlying database
-    pub fn pool(mut self, value: sqlx::Pool<Sqlite>) -> Self {
+    /// * `value` - the [connection pool](Pool) for the underlying database
+    ///
+    /// # Remarks
+    ///
+    /// A pool configured by this function supersedes [Self::url] and [Self::options]. This is required to share a
+    /// single, in-memory database such as `sqlite::memory:`, where connecting again would otherwise create a new,
+    /// empty database.
+    pub fn pool(mut self, value: Pool<DB>) -> Self {
         self.pool = Some(value);
         self
+    }
+
+    fn connect(&mut self) -> Result<Pool<DB>, SqlStoreBuilderError> {
+        if let Some(pool) = self.pool.take() {
+            Ok(pool)
+        } else {
+            let url = self.url.take().ok_or(MissingUrl)?;
+            Ok(self.options.take().unwrap_or_default().connect_lazy(&url)?)
+        }
     }
 }
 
@@ -200,15 +208,12 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Event, DB> {
     }
 
     /// Builds and returns a new [event store](event::SqlStore).
-    pub fn build(self) -> Result<event::SqlStore<ID, DB>, SqlStoreBuilderError> {
-        let url = self.url.ok_or(MissingUrl)?;
-        let pool = self.options.unwrap_or_default();
-        let table = self.table.ok_or(MissingTable)?;
-        let table = if self.schema.is_empty() {
-            Ident::unqualified(table)
-        } else {
-            Ident::qualified(self.schema, table)
-        };
+    pub fn build(mut self) -> Result<event::SqlStore<ID, DB>, SqlStoreBuilderError>
+    where
+        DB: Provider,
+    {
+        let table = DB::table(self.schema, self.table.ok_or(MissingTable)?);
+        let pool = self.connect()?;
         let options = EventStoreOptions::<ID>::new(
             self.concurrency,
             self.delete,
@@ -218,101 +223,46 @@ impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Event, DB> {
             self.snapshots,
         );
 
-        Ok(event::SqlStore::new(table, pool.connect_lazy(&url)?, options))
+        Ok(event::SqlStore::new(table, pool, options))
+    }
+}
+
+impl<ID, DB> TryFrom<SqlStoreBuilder<ID, dyn Event, DB>> for event::SqlStore<ID, DB>
+where
+    DB: Database + Provider,
+{
+    type Error = SqlStoreBuilderError;
+
+    fn try_from(value: SqlStoreBuilder<ID, dyn Event, DB>) -> Result<Self, Self::Error> {
+        value.build()
     }
 }
 
 impl<ID, DB: Database> SqlStoreBuilder<ID, dyn Snapshot, DB> {
     /// Builds and returns a new [snapshot store](snapshot::SqlStore).
-    pub fn build(self) -> Result<snapshot::SqlStore<ID, DB>, SqlStoreBuilderError> {
-        let url = self.url.ok_or(MissingUrl)?;
-        let pool = self.options.unwrap_or_default();
-        let table = self.table.ok_or(MissingTable)?;
-        let table = if self.schema.is_empty() {
-            Ident::unqualified(table)
-        } else {
-            Ident::qualified(self.schema, table)
-        };
+    pub fn build(mut self) -> Result<snapshot::SqlStore<ID, DB>, SqlStoreBuilderError>
+    where
+        DB: Provider,
+    {
+        let table = DB::table(self.schema, self.table.ok_or(MissingTable)?);
+        let pool = self.connect()?;
         let options = SnapshotStoreOptions::new(
             self.mask,
             self.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
             self.transcoder.unwrap_or_default(),
         );
 
-        Ok(snapshot::SqlStore::new(table, pool.connect_lazy(&url)?, options))
+        Ok(snapshot::SqlStore::new(table, pool, options))
     }
 }
 
-cfg_select! {
-    feature = "sqlite" => {
-        use crate::sqlite::{EventStore, SnapshotStore};
-        use sqlx::Sqlite;
+impl<ID, DB> TryFrom<SqlStoreBuilder<ID, dyn Snapshot, DB>> for snapshot::SqlStore<ID, DB>
+where
+    DB: Database + Provider,
+{
+    type Error = SqlStoreBuilderError;
 
-        impl<ID> TryFrom<SqlStoreBuilder<ID, dyn Event, Sqlite>> for EventStore<ID> {
-            type Error = SqlStoreBuilderError;
-
-            fn try_from(value: SqlStoreBuilder<ID, dyn Event, Sqlite>) -> Result<Self, Self::Error> {
-                let pool = if let Some(pool) = &value.pool {
-                    pool.clone()
-                } else {
-                    let url = value.url.ok_or(MissingUrl)?;
-                    let options = value.options.unwrap_or_default();
-                    options.connect_lazy(&url)?
-                };
-                let table = value.table.ok_or(MissingTable)?;
-                let table = if value.schema.is_empty() {
-                    table.into()
-                } else {
-                    format!("{}_{}", value.schema, table)
-                };
-                let options = EventStoreOptions::<ID>::new(
-                    value.concurrency,
-                    value.delete,
-                    value.mask,
-                    value.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
-                    value.transcoder.unwrap_or_default(),
-                    value.snapshots,
-                );
-
-                Ok(Self::new(
-                    table,
-                    pool,
-                    options,
-                ))
-            }
-        }
-
-
-        impl<ID> TryFrom<SqlStoreBuilder<ID, dyn Snapshot, Sqlite>> for SnapshotStore<ID> {
-            type Error = SqlStoreBuilderError;
-
-            fn try_from(value: SqlStoreBuilder<ID, dyn Snapshot, Sqlite>) -> Result<Self, Self::Error> {
-                let pool = if let Some(pool) = &value.pool {
-                    pool.clone()
-                } else {
-                    let url = value.url.ok_or(MissingUrl)?;
-                    let options = value.options.unwrap_or_default();
-                    options.connect_lazy(&url)?
-                };
-                let table = value.table.ok_or(MissingTable)?;
-                let table = if value.schema.is_empty() {
-                    table.into()
-                } else {
-                    format!("{}_{}", value.schema, table)
-                };
-                let options = SnapshotStoreOptions::new(
-                    value.mask,
-                    value.clock.unwrap_or_else(|| Arc::new(WallClock::new())),
-                    value.transcoder.unwrap_or_default()
-                );
-
-                Ok(Self::new(
-                    table,
-                    pool,
-                    options,
-                ))
-            }
-        }
+    fn try_from(value: SqlStoreBuilder<ID, dyn Snapshot, DB>) -> Result<Self, Self::Error> {
+        value.build()
     }
-    _ => {}
 }
