@@ -4,17 +4,13 @@ use std::time::SystemTime;
 use thiserror::Error;
 use uuid::Uuid;
 
+#[derive(Default)]
 enum State {
+    #[default]
     Drafted,
     Placed,
     Canceled,
     Fulfilled,
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self::Drafted
-    }
 }
 
 #[derive(Error, Debug, Copy, Clone, PartialEq, Eq)]

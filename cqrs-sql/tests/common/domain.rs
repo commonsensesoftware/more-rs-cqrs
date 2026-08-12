@@ -14,7 +14,6 @@ fn to_secs(time: SystemTime) -> u64 {
 }
 
 #[inline]
-
 fn from_secs(secs: u64) -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(secs)
 }
@@ -111,16 +110,11 @@ mod events {
     event_impl!(Statement, balance);
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum Status {
+    #[default]
     Open,
     Closed,
-}
-
-impl Default for Status {
-    fn default() -> Self {
-        Self::Open
-    }
 }
 
 #[derive(Error, Copy, Clone, Debug, PartialEq, Eq)]
