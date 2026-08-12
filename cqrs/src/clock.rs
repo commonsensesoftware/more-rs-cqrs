@@ -155,7 +155,7 @@ mod test {
     fn winding_virtual_clock_should_report_expected_time() {
         // arrange
         let now = SystemTime::now();
-        let clock: VirtualClock = now.clone().into();
+        let clock: VirtualClock = now.into();
         let five_mins = Duration::from_secs(60 * 5);
 
         // act
@@ -169,7 +169,7 @@ mod test {
     fn rewinding_virtual_clock_should_report_expected_time() {
         // arrange
         let now = SystemTime::now();
-        let clock: VirtualClock = now.clone().into();
+        let clock: VirtualClock = now.into();
         let five_mins = Duration::from_secs(60 * 5);
 
         // act
@@ -205,7 +205,7 @@ mod test {
     fn winding_and_rewinding_virtual_clock_should_cancel_each_other() {
         // arrange
         let now = SystemTime::now();
-        let clock: VirtualClock = now.clone().into();
+        let clock: VirtualClock = now.into();
         let five_mins = Duration::from_secs(60 * 5);
 
         // act

@@ -158,6 +158,7 @@ impl Display for SqlVersionDisplay {
 }
 
 #[cfg(test)]
+#[allow(clippy::unusual_byte_groupings)]
 mod test {
     use super::SqlVersionPart::*;
     use super::*;

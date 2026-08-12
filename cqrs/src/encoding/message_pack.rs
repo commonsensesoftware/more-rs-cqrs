@@ -97,7 +97,7 @@ mod tests {
     fn fields_should_roundtrip_with_message_pack() {
         // arrange
         let expected = Example {
-            id: uuid::Uuid::new_v4().into(),
+            id: uuid::Uuid::new_v4(),
             version: Version::new(42),
         };
 

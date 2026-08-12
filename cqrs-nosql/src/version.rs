@@ -202,6 +202,7 @@ impl Display for NoSqlVersionDisplay {
 }
 
 #[cfg(test)]
+#[allow(clippy::unusual_byte_groupings)]
 mod test {
     use super::NoSqlVersionPart::*;
     use super::*;

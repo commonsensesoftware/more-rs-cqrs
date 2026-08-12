@@ -76,9 +76,10 @@ pub struct Account {
 #[aggregate(String)]
 impl Account {
     pub fn open<S: Into<String>>(id: S) -> Self {
-        let mut me = Self::default();
-        me.id = id.into();
-        me
+        Self {
+            id: id.into(),
+            ..Default::default()
+        }
     }
 
     pub fn credit(&mut self, amount: f32) {

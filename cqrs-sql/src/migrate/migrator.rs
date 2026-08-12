@@ -108,14 +108,14 @@ where
     }
 }
 
-
-#[cfg_attr(feature = "di", di::injectable(StoreMigration))]
+#[cfg(feature = "di")]
+#[di::injectable(StoreMigration)]
 impl<DB> SqlStoreMigrator<DB>
 where
     DB: Database,
     DB::Connection: Migrate,
 {
-    #[cfg_attr(feature = "di", di::inject)]
+    #[di::inject]
     fn _new(migrations: impl Iterator<Item = di::Ref<SqlStoreMigration<DB>>>) -> Self {
         use std::collections::HashMap;
 

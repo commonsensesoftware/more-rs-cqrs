@@ -118,7 +118,7 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
     println!(
         "Order {} was delivered to {} on {}",
         order.id(),
-        &order.address().unwrap().street,
+        order.address().unwrap().street,
         format_date(order.fulfilled_on())
     );
 
