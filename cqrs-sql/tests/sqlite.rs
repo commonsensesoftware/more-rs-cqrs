@@ -5,13 +5,16 @@ use common::{
     domain::{self, Account},
     scenario,
 };
-use cqrs::{Repository, RepositoryError, snapshot::Store};
+use cqrs::{
+    Repository, RepositoryError,
+    snapshot::{Retention, Store},
+};
 use cqrs_sql::{
     SqlStoreMigration,
     sqlite::{EventStore, Migrator, SnapshotStore},
 };
-use sqlx::sqlite::SqlitePoolOptions;
-use std::sync::Arc;
+use sqlx::{AssertSqlSafe, SqlitePool, sqlite::SqlitePoolOptions};
+use std::{sync::Arc, time::Duration};
 
 #[tokio::test]
 async fn verify_sqlite_integration() -> TestResult {
@@ -63,6 +66,89 @@ async fn verify_sqlite_integration() -> TestResult {
         RepositoryError::NotFound(id.clone())
     );
     assert!(snapshots.load(&id, None).await?.is_none());
+    Ok(())
+}
+
+// SQLite has no schema, so the table is the unqualified, unquoted name 'snapshots_<table>'
+async fn count_snapshots(pool: &SqlitePool, table: &str) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(AssertSqlSafe(format!("SELECT COUNT(*) FROM snapshots_{table};")))
+        .fetch_one(pool)
+        .await
+}
+
+#[tokio::test]
+async fn verify_sqlite_prunes_snapshots() -> TestResult {
+    // arrange
+    const TABLE: &str = "TMP_1c9a7f4e0b6d47b0a3e5d8c2f1a09b6e";
+
+    let sqlite = SqlitePoolOptions::new().connect("sqlite::memory:").await?;
+    let snapshots: SnapshotStore<String> = SnapshotStore::builder()
+        .pool(sqlite.clone())
+        .table(TABLE)
+        .transcoder(domain::transcoder::snapshots())
+        .try_into()?;
+    let events: EventStore<String> = EventStore::builder()
+        .pool(sqlite.clone())
+        .table("TMP_0d3b8e6a5c1f42d9b7e4a0c8f2d61b35")
+        .transcoder(domain::transcoder::events())
+        .try_into()?;
+    let migrator = Migrator::new();
+
+    migrator.add(SqlStoreMigration::with_pool(&events, sqlite.clone()));
+    migrator.add(SqlStoreMigration::with_pool(&snapshots, sqlite.clone()));
+    migrator.run().await?;
+
+    let repository = Repository::<Account>::new(events);
+    let id = scenario::open_new_account(&repository, "12345", 50.0).await?;
+
+    // one snapshot per version, so three in total
+    for _ in 0..3 {
+        scenario::new_monthly_statement(&repository, &id, &snapshots).await?;
+        scenario::make_deposit(&repository, &id, 10.0).await?;
+    }
+
+    assert_eq!(count_snapshots(&sqlite, TABLE).await?, 3, "expected 3 snapshots");
+
+    // act / assert
+    let retention = Retention {
+        count: Some(2),
+        age: None,
+    };
+
+    snapshots.prune(&id, Some(&retention)).await?;
+    assert_eq!(
+        count_snapshots(&sqlite, TABLE).await?,
+        2,
+        "expected 2 retained by count"
+    );
+
+    let retention = Retention {
+        count: Some(1),
+        age: Some(Duration::from_secs(60)),
+    };
+
+    snapshots.prune(&id, Some(&retention)).await?;
+    assert_eq!(
+        count_snapshots(&sqlite, TABLE).await?,
+        1,
+        "expected 1 retained by count and age"
+    );
+
+    // nothing is older than the retained age, so the last snapshot survives
+    let retention = Retention {
+        count: None,
+        age: Some(Duration::from_secs(60)),
+    };
+
+    snapshots.prune(&id, Some(&retention)).await?;
+    assert_eq!(count_snapshots(&sqlite, TABLE).await?, 1, "expected 1 retained by age");
+
+    snapshots.prune(&id, None).await?;
+    assert_eq!(
+        count_snapshots(&sqlite, TABLE).await?,
+        0,
+        "expected all snapshots pruned"
+    );
     Ok(())
 }
 

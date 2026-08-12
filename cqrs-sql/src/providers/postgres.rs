@@ -31,7 +31,7 @@ where
         delete
             .push("SELECT id, version FROM ")
             .push(table.quote())
-            .push("WHERE id = ")
+            .push(" WHERE id = ")
             .push_bind(id);
 
         // SAFETY: unwrap is allowed here as before epoch is a bug in the clock
