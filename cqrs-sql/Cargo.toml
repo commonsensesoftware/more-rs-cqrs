@@ -38,10 +38,11 @@ more-cqrs = { path = "../cqrs", features = ["json"] }
 more-cqrs-sql = { path = ".", features = [
     "di",
     "migrate",
+    "mysql",
     "postgres",
     "sqlite",
 ] }
 rstest = { workspace = true }
 serde = { workspace = true }
-testcontainers-modules = { workspace = true, features = ["postgres"] }
+testcontainers-modules = { workspace = true, features = ["mysql", "postgres"] }
 tokio = { workspace = true }

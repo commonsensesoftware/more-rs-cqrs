@@ -1,8 +1,76 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
 
-const DBL_QUOTE: char = '"';
 const UNDERSCORE: char = '_';
+
+/// Represents the pair of delimiters which enclose a quoted SQL identifier.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Delimiters {
+    open: char,
+    close: char,
+}
+
+impl Delimiters {
+    /// The ANSI SQL delimiters, which enclose an identifier in double quotes.
+    ///
+    /// # Remarks
+    ///
+    /// Used by PostgreSQL and SQLite. SQL Server also accepts these, but only while
+    /// `QUOTED_IDENTIFIER` is `ON`, so it prefers [`Delimiters::BRACKET`].
+    pub const ANSI: Self = Self::new('"', '"');
+
+    /// The MySQL delimiters, which enclose an identifier in backticks.
+    ///
+    /// # Remarks
+    ///
+    /// MySQL only treats a double quote as an identifier delimiter when `ANSI_QUOTES` is
+    /// among its `sql_mode` flags, which is not the default and cannot be assumed.
+    pub const BACKTICK: Self = Self::new('`', '`');
+
+    /// The T-SQL delimiters, which enclose an identifier in square brackets.
+    pub const BRACKET: Self = Self::new('[', ']');
+
+    /// Initializes new [delimiters](Delimiters).
+    ///
+    /// # Arguments
+    ///
+    /// * `open` - the character which opens a quoted identifier
+    /// * `close` - the character which closes a quoted identifier
+    pub const fn new(open: char, close: char) -> Self {
+        Self { open, close }
+    }
+
+    /// Gets the character which opens a quoted identifier.
+    pub const fn open(&self) -> char {
+        self.open
+    }
+
+    /// Gets the character which closes a quoted identifier.
+    pub const fn close(&self) -> char {
+        self.close
+    }
+}
+
+impl Default for Delimiters {
+    fn default() -> Self {
+        Self::ANSI
+    }
+}
+
+/// Appends a quoted identifier, escaping any closing delimiter by doubling it.
+fn push_quoted(text: &str, delimiters: Delimiters, buffer: &mut String) {
+    buffer.push(delimiters.open());
+
+    for ch in text.chars() {
+        if ch == delimiters.close() {
+            buffer.push(ch);
+        }
+
+        buffer.push(ch);
+    }
+
+    buffer.push(delimiters.close());
+}
 
 #[inline]
 fn all_allowed(text: &str) -> bool {
@@ -69,10 +137,35 @@ impl<'a> Ident<'a> {
         &self.1
     }
 
-    /// Returns the full identifier name, including quotes if necessary.
+    /// Returns the full identifier name, including ANSI quotes if necessary.
+    ///
+    /// # Remarks
+    ///
+    /// Prefer [`Provider::quote`](crate::sql::Provider::quote), which applies the
+    /// [delimiters](Delimiters) of the target database.
     #[inline]
     pub fn quote(&self) -> Cow<'_, str> {
-        self._quote(None)
+        self.quote_with(Delimiters::ANSI)
+    }
+
+    /// Returns the full identifier name, including quotes if necessary.
+    ///
+    /// # Arguments
+    ///
+    /// * `delimiters` - the [delimiters](Delimiters) which enclose a quoted identifier
+    #[inline]
+    pub fn quote_with(&self, delimiters: Delimiters) -> Cow<'_, str> {
+        self._quote(None, delimiters)
+    }
+
+    /// Returns an identifier part, including ANSI quotes if necessary.
+    ///
+    /// # Arguments
+    ///
+    /// * `part` - the [part](IdentPart) to quote
+    #[inline]
+    pub fn quote_part(&self, part: IdentPart) -> Option<Cow<'_, str>> {
+        self.quote_part_with(part, Delimiters::ANSI)
     }
 
     /// Returns an identifier part, including quotes if necessary.
@@ -80,16 +173,17 @@ impl<'a> Ident<'a> {
     /// # Arguments
     ///
     /// * `part` - the [part](IdentPart) to quote
+    /// * `delimiters` - the [delimiters](Delimiters) which enclose a quoted identifier
     #[inline]
-    pub fn quote_part(&self, part: IdentPart) -> Option<Cow<'_, str>> {
+    pub fn quote_part_with(&self, part: IdentPart, delimiters: Delimiters) -> Option<Cow<'_, str>> {
         if part == IdentPart::Schema && self.0.is_none() {
             None
         } else {
-            Some(self._quote(Some(part)))
+            Some(self._quote(Some(part), delimiters))
         }
     }
 
-    fn _quote(&self, part: Option<IdentPart>) -> Cow<'_, str> {
+    fn _quote(&self, part: Option<IdentPart>, delimiters: Delimiters) -> Cow<'_, str> {
         let mut quoted = String::new();
         let full = part.is_none();
 
@@ -107,9 +201,7 @@ impl<'a> Ident<'a> {
             }
 
             if !schema.is_empty() {
-                quoted.push(DBL_QUOTE);
-                quoted.push_str(schema);
-                quoted.push(DBL_QUOTE);
+                push_quoted(schema, delimiters, &mut quoted);
             }
         }
 
@@ -122,9 +214,7 @@ impl<'a> Ident<'a> {
                 quoted.push('.');
             }
 
-            quoted.push(DBL_QUOTE);
-            quoted.push_str(&self.1);
-            quoted.push(DBL_QUOTE);
+            push_quoted(&self.1, delimiters, &mut quoted);
         }
 
         Cow::Owned(quoted)
@@ -271,6 +361,40 @@ mod tests {
 
         // act
         let name = ident.part_as_object_name(part);
+
+        // assert
+        assert_eq!(&name, expected)
+    }
+
+    #[rstest]
+    #[case(Delimiters::ANSI, "\"dbo\".\"My Table\"")]
+    #[case(Delimiters::BACKTICK, "`dbo`.`My Table`")]
+    #[case(Delimiters::BRACKET, "[dbo].[My Table]")]
+    fn identifier_should_quote_with_delimiters(#[case] delimiters: Delimiters, #[case] expected: &str) {
+        // arrange
+        let ident = Ident::qualified("dbo", "My Table");
+
+        // act
+        let name = ident.quote_with(delimiters);
+
+        // assert
+        assert_eq!(&name, expected)
+    }
+
+    #[rstest]
+    #[case(Delimiters::ANSI, "my\"table", "\"my\"\"table\"")]
+    #[case(Delimiters::BACKTICK, "my`table", "`my``table`")]
+    #[case(Delimiters::BRACKET, "my]table", "[my]]table]")]
+    fn identifier_should_escape_closing_delimiter(
+        #[case] delimiters: Delimiters,
+        #[case] object: &str,
+        #[case] expected: &str,
+    ) {
+        // arrange
+        let ident = Ident::unqualified(object);
+
+        // act
+        let name = ident.quote_with(delimiters);
 
         // assert
         assert_eq!(&name, expected)

@@ -1,4 +1,4 @@
-use crate::sql::{self, greater_than, less_than};
+use crate::sql::{self, Provider, greater_than, less_than};
 use cqrs::{
     Range,
     event::{Predicate, StoreError},
@@ -21,12 +21,14 @@ where
 
 pub fn select_id<'a, DB>(table: sql::Ident<'a>, stored_on: Range<SystemTime>) -> QueryBuilder<DB>
 where
-    DB: Database,
+    DB: Database + Provider,
     i64: Encode<'a, DB> + Type<DB>,
 {
     let mut select = QueryBuilder::new("SELECT id FROM ");
 
-    select.push(table.quote()).push(" WHERE version = 1 AND sequence = 0");
+    select
+        .push(DB::quote(&table))
+        .push(" WHERE version = 1 AND sequence = 0");
 
     if let Some(lower) = greater_than(&stored_on.from) {
         select.push(" AND ");
@@ -56,7 +58,7 @@ pub fn select<'a, ID, DB>(
 ) -> QueryBuilder<DB>
 where
     ID: Debug + Encode<'a, DB> + Send + Type<DB> + 'a,
-    DB: Database,
+    DB: Database + Provider,
     i16: Encode<'a, DB> + Type<DB>,
     i32: Encode<'a, DB> + Type<DB>,
     i64: Encode<'a, DB> + Type<DB>,
@@ -74,7 +76,7 @@ where
     const INIT: &str = "SELECT type, revision, version, sequence, content FROM ";
     let mut select = QueryBuilder::new(INIT);
 
-    select.push(table.quote());
+    select.push(DB::quote(&table));
 
     if let Some(predicate) = predicate {
         let mut added = false;
@@ -147,14 +149,14 @@ where
 
 pub fn exists<'a, ID, DB>(table: &'a sql::Ident<'a>, previous: &'a sql::Row<ID>) -> QueryBuilder<DB>
 where
-    DB: Database,
+    DB: Database + Provider,
     ID: Clone + Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
     i32: for<'db> Encode<'db, DB> + Type<DB>,
 {
     let mut select = QueryBuilder::new("SELECT EXISTS(SELECT 1 FROM ");
 
     select
-        .push(table.quote())
+        .push(DB::quote(table))
         .push(' ')
         .push(" WHERE id = ")
         .push_bind(&previous.id)
@@ -168,7 +170,7 @@ where
 
 pub fn insert<'a, ID, DB>(table: &'a sql::Ident<'a>, row: &'a sql::Row<ID>) -> QueryBuilder<DB>
 where
-    DB: Database,
+    DB: Database + Provider,
     ID: Encode<'a, DB> + Send + Type<DB> + 'a,
     i16: for<'db> Encode<'db, DB> + Type<DB>,
     i32: for<'db> Encode<'db, DB> + Type<DB>,
@@ -179,7 +181,7 @@ where
     let mut insert = QueryBuilder::new("INSERT INTO ");
 
     insert
-        .push(table.quote())
+        .push(DB::quote(table))
         .push(' ')
         .push(" VALUES (")
         .push_bind(&row.id)
@@ -213,7 +215,7 @@ pub async fn insert_transacted<'a, ID, DB>(
     tx: &'a mut Transaction<'_, DB>,
 ) -> Result<(), StoreError<ID>>
 where
-    DB: Database,
+    DB: Database + Provider,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     ID: Clone + Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
@@ -244,7 +246,7 @@ pub async fn ensure_not_deleted<'a, ID, DB>(
     tx: &'a mut Transaction<'_, DB>,
 ) -> Result<(), StoreError<ID>>
 where
-    DB: Database,
+    DB: Database + Provider,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     ID: Clone + Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,

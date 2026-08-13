@@ -1,5 +1,5 @@
 use crate::SqlStoreMigrator;
-use crate::{sqlite, sql::Ident};
+use crate::{sqlite, sql::{Ident, Provider}};
 use sqlx::{
     migrate::{Migration, MigrationType::Simple},
     AssertSqlSafe, Sqlite, SqlSafeStr,
@@ -52,7 +52,7 @@ fn events_table(table: &Ident, db_type: &str) -> String {
     let mut sql = String::new();
 
     sql.push_str("CREATE TABLE IF NOT EXISTS ");
-    sql.push_str(&table.quote());
+    sql.push_str(&Sqlite::quote(table));
     sql.push('(');
     sql.push_str("id ");
     sql.push_str(db_type);
@@ -74,7 +74,7 @@ fn snapshots_table(table: &Ident, db_type: &str) -> String {
     let mut sql = String::new();
 
     sql.push_str("CREATE TABLE IF NOT EXISTS ");
-    sql.push_str(&table.quote());
+    sql.push_str(&Sqlite::quote(table));
     sql.push('(');
     sql.push_str("id ");
     sql.push_str(db_type);

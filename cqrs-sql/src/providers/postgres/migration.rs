@@ -1,7 +1,7 @@
 use crate::SqlStoreMigrator;
 use crate::{
     postgres,
-    sql::{Ident, IdentPart::Schema},
+    sql::{Ident, IdentPart::Schema, Provider},
 };
 use sqlx::{
     migrate::{Migration, MigrationType::Simple},
@@ -60,14 +60,14 @@ fn db_type<ID>() -> &'static str {
 fn events_table(table: &Ident, db_type: &str) -> String {
     let mut sql = String::new();
 
-    if let Some(schema) = table.quote_part(Schema) {
+    if let Some(schema) = Postgres::quote_part(table, Schema) {
         sql.push_str("CREATE SCHEMA IF NOT EXISTS ");
         sql.push_str(&schema);
         sql.push_str(";\n");
     }
 
     sql.push_str("CREATE TABLE IF NOT EXISTS ");
-    sql.push_str(&table.quote());
+    sql.push_str(&Postgres::quote(table));
     sql.push('(');
     sql.push_str("id ");
     sql.push_str(db_type);
@@ -88,14 +88,14 @@ fn events_table(table: &Ident, db_type: &str) -> String {
 fn snapshots_table(table: &Ident, db_type: &str) -> String {
     let mut sql = String::new();
 
-    if let Some(schema) = table.quote_part(Schema) {
+    if let Some(schema) = Postgres::quote_part(table, Schema) {
         sql.push_str("CREATE SCHEMA IF NOT EXISTS ");
         sql.push_str(&schema);
         sql.push_str(";\n");
     }
 
     sql.push_str("CREATE TABLE IF NOT EXISTS ");
-    sql.push_str(&table.quote());
+    sql.push_str(&Postgres::quote(table));
     sql.push('(');
     sql.push_str("id ");
     sql.push_str(db_type);

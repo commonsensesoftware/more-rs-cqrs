@@ -1,7 +1,7 @@
 use super::{Prune, Upsert, command};
 use crate::{
     BoxErr, SqlStoreBuilder, SqlVersion, new_version,
-    sql::{self, Ident},
+    sql::{self, Ident, Provider},
 };
 use async_trait::async_trait;
 use cqrs::{
@@ -48,7 +48,7 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
 impl<ID, DB> Store<ID> for SqlStore<ID, DB>
 where
     ID: Clone + Debug + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Send + Sync + Type<DB>,
-    DB: Database + for<'db> Prune<'db, ID, DB> + Upsert,
+    DB: Database + Provider + for<'db> Prune<'db, ID, DB> + Upsert,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,

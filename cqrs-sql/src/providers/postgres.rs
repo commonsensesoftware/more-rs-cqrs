@@ -1,4 +1,7 @@
-use crate::{event, snapshot, sql};
+use crate::{
+    event, snapshot,
+    sql::{self, Provider},
+};
 use cqrs::{Clock, snapshot::Retention};
 use sqlx::{Encode, Postgres, QueryBuilder, Type};
 use std::time::UNIX_EPOCH;
@@ -30,7 +33,7 @@ where
 
         delete
             .push("SELECT id, version FROM ")
-            .push(table.quote())
+            .push(Postgres::quote(table))
             .push(" WHERE id = ")
             .push_bind(id);
 
@@ -49,7 +52,7 @@ where
 
         delete
             .push(") DELETE FROM ")
-            .push(table.quote())
+            .push(Postgres::quote(table))
             .push(" s1 USING s2 WHERE s1.id = s2.id AND s1.version = s2.version;");
 
         delete
