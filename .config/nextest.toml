@@ -1,0 +1,14 @@
+# the integration tests for a database served over the network each start a container, which dominates local run time.
+# they are excluded by default and restored by the 'ci' profile, keeping the everyday loop fast while CI verifies E2E.
+#
+#   cargo nextest run              everything except the container tests
+#   cargo nextest run -P ci        everything
+#   cargo nextest run -E 'binary(mysql)'
+#
+# the filter matches test names rather than binaries because a filterset naming a binary that does not exist is an
+# error, and a provider is not present on every branch
+[profile.default]
+default-filter = 'not test(/^verify_(mssql|mysql|postgres)_/)'
+
+[profile.ci]
+default-filter = 'all()'
