@@ -1,7 +1,7 @@
 use super::Upsert;
 use crate::{
     SqlVersion,
-    sql::{self, greater_than},
+    sql::{self, Provider, greater_than},
 };
 use cqrs::{Mask, snapshot::Predicate};
 use sqlx::{Database, Encode, QueryBuilder, Type};
@@ -15,7 +15,7 @@ pub fn select<'a, ID, DB>(
 ) -> QueryBuilder<DB>
 where
     ID: Debug + Encode<'a, DB> + Send + Type<DB> + 'a,
-    DB: Database,
+    DB: Database + Provider,
     i32: Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
     i64: Debug + for<'db> Encode<'db, DB> + Send + Type<DB>,
 {
@@ -23,7 +23,7 @@ where
 
     select
         .push(" FROM ")
-        .push(table.quote())
+        .push(DB::quote(table))
         .push(" WHERE id = ")
         .push_bind(id);
 
@@ -58,7 +58,7 @@ where
 
 pub fn insert<'a, ID, DB>(table: &'a sql::Ident<'a>, row: &'a sql::Row<ID>) -> QueryBuilder<DB>
 where
-    DB: Database + Upsert,
+    DB: Database + Provider + Upsert,
     ID: Encode<'a, DB> + Send + Type<DB> + 'a,
     i16: for<'db> Encode<'db, DB> + Type<DB>,
     i32: for<'db> Encode<'db, DB> + Type<DB>,
@@ -69,7 +69,7 @@ where
     let mut insert = QueryBuilder::new("INSERT INTO ");
 
     insert
-        .push(table.quote())
+        .push(DB::quote(table))
         .push(' ')
         .push(" VALUES (")
         .push_bind(&row.id)

@@ -1,14 +1,18 @@
-use super::Ident;
+use super::{Ident, Provider};
 use sqlx::{Database, Encode, QueryBuilder, Type};
 
 pub fn delete<'a, ID, DB>(table: &'a Ident<'a>, id: &'a ID) -> QueryBuilder<DB>
 where
-    DB: Database,
+    DB: Database + Provider,
     ID: Encode<'a, DB> + Send + Type<DB> + 'a,
 {
     let mut delete = QueryBuilder::new("DELETE FROM ");
 
-    delete.push(table.quote()).push(" WHERE id = ").push_bind(id).push(';');
+    delete
+        .push(DB::quote(table))
+        .push(" WHERE id = ")
+        .push_bind(id)
+        .push(';');
 
     delete
 }

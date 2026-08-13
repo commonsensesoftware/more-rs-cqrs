@@ -1,4 +1,7 @@
-use crate::{event, snapshot, sql};
+use crate::{
+    event, snapshot,
+    sql::{self, Provider},
+};
 use cqrs::{Clock, snapshot::Retention};
 use sqlx::{Encode, QueryBuilder, Sqlite, Type};
 use std::time::UNIX_EPOCH;
@@ -33,7 +36,7 @@ where
     ) -> sqlx::QueryBuilder<Sqlite> {
         let mut delete = QueryBuilder::new("DELETE FROM ");
 
-        delete.push(table.quote());
+        delete.push(Sqlite::quote(table));
 
         // SAFETY: unwrap is allowed here as before epoch is a bug in the clock
         if let Some(count) = retention.count {
@@ -43,7 +46,7 @@ where
             // requires LIMIT and -1 is the SQLite idiom for an unbounded one
             delete
                 .push(" WHERE (id, version) IN (SELECT id, version FROM ")
-                .push(table.quote())
+                .push(Sqlite::quote(table))
                 .push(" WHERE id = ")
                 .push_bind(id);
 

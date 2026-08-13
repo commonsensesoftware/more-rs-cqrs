@@ -1,7 +1,7 @@
 use super::{command, get_snapshot, select_version};
 use crate::{
     BoxErr, SqlStoreBuilder, SqlVersion, SqlVersionPart, new_version,
-    sql::{self, Context, Ident, IntoRows},
+    sql::{self, Context, Ident, IntoRows, Provider},
 };
 use async_stream::try_stream;
 use async_trait::async_trait;
@@ -43,7 +43,7 @@ impl<ID, DB: Database> SqlStore<ID, DB> {
 impl<ID, DB> Store<ID> for SqlStore<ID, DB>
 where
     ID: Clone + Debug + for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Send + Sync + Type<DB> + 'static,
-    DB: Database,
+    DB: Database + Provider,
     <DB as Database>::Arguments: IntoArguments<DB>,
     for<'db> &'db mut <DB as Database>::Connection: Executor<'db, Database = DB>,
     i16: for<'db> Encode<'db, DB> + for<'db> Decode<'db, DB> + Type<DB>,

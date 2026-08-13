@@ -2,9 +2,10 @@ pub(crate) mod command;
 mod ident;
 mod row;
 
-pub use ident::{Ident, IdentPart};
+pub use ident::{Delimiters, Ident, IdentPart};
 pub(crate) use row::{Context, IntoRows, Row};
 
+use std::borrow::Cow;
 use std::ops::Bound::{self, Excluded, Included};
 
 /// Defines the behavior of a SQL database provider.
@@ -34,6 +35,36 @@ pub trait Provider {
         } else {
             Ident::unqualified(Ident::qualified(schema, table).as_object_name().into_owned())
         }
+    }
+
+    /// Gets the [delimiters](Delimiters) which enclose a quoted identifier.
+    ///
+    /// # Remarks
+    ///
+    /// The default value is [`Delimiters::ANSI`]. A provider which does not treat a double
+    /// quote as an identifier delimiter must override this; for example, MySQL uses
+    /// [`Delimiters::BACKTICK`] and SQL Server uses [`Delimiters::BRACKET`].
+    fn delimiters() -> Delimiters {
+        Delimiters::ANSI
+    }
+
+    /// Returns the full identifier name, including quotes if necessary.
+    ///
+    /// # Arguments
+    ///
+    /// * `ident` - the [identifier](Ident) to quote
+    fn quote<'a>(ident: &'a Ident<'_>) -> Cow<'a, str> {
+        ident.quote_with(Self::delimiters())
+    }
+
+    /// Returns an identifier part, including quotes if necessary.
+    ///
+    /// # Arguments
+    ///
+    /// * `ident` - the [identifier](Ident) to quote
+    /// * `part` - the [part](IdentPart) to quote
+    fn quote_part<'a>(ident: &'a Ident<'_>, part: IdentPart) -> Option<Cow<'a, str>> {
+        ident.quote_part_with(part, Self::delimiters())
     }
 }
 
