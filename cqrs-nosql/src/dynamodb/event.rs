@@ -178,10 +178,15 @@ where
         &self.options
     }
 
-    async fn write_one(&self, id: &ID, version: Version, event: &Box<dyn Event>) -> Result<Version, StoreError<ID>> {
+    async fn write_one(
+        &self,
+        id: &ID,
+        version: Version,
+        event: &(dyn Event + 'static),
+    ) -> Result<Version, StoreError<ID>> {
         let stored_on = crate::to_secs(self.options.clock().now());
         let schema = event.schema();
-        let content = self.options.transcoder().encode(event.as_ref())?;
+        let content = self.options.transcoder().encode(event)?;
 
         if self.options.delete().supported()
             && let Some(previous) = version.previous()
@@ -277,7 +282,7 @@ where
         }
     }
 
-    async fn written(&self, id: &ID, version: Version, event: &Box<dyn Event>) -> Result<bool, StoreError<ID>> {
+    async fn written(&self, id: &ID, version: Version, event: &(dyn Event + 'static)) -> Result<bool, StoreError<ID>> {
         let output = self
             .ddb
             .get_item()
@@ -292,7 +297,7 @@ where
             return Ok(false);
         };
         let schema = event.schema();
-        let content = self.options.transcoder().encode(event.as_ref())?;
+        let content = self.options.transcoder().encode(event)?;
 
         Ok(existing
             .get("kind")
