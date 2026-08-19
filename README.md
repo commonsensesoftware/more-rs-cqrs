@@ -38,5 +38,7 @@ You may be looking for:
 
 ## CQRS in Action
 
-Coming soon. Refer to the [examples](https://github.com/commonsensesoftware/more-rs-cqrs/tree/main/examples) in
-the meantime.
+Refer to the [examples] for various implementations. A good place to start is the [simplest possible thing].
+
+[examples]: https://github.com/commonsensesoftware/more-rs-cqrs/tree/main/examples
+[simplest possible thing]: https://github.com/commonsensesoftware/more-rs-cqrs/tree/main/examples/basic/simplest-possible-thing.rs
