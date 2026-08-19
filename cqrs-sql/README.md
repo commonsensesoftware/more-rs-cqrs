@@ -19,8 +19,14 @@ This crate provides the following features:
 - **sqlite** - Provides storage using SQLite
 - **migrate** - Provides SQL storage migrations
 
-## Example
+## Examples
 
-Coming soon. In the meantime, see the
-[Postgres orders](https://github.com/commonsensesoftware/more-rs-cqrs/tree/main/examples/postgres/orders)
-example.
+The following solutions for a simple _Orders_ service are implemented for:
+
+- [Postgres]
+- [SQLite]
+
+>Switching between storage implementations is pure configuration.
+
+[Postgres]: https://github.com/commonsensesoftware/more-rs-cqrs/tree/main/examples/postgres/orders
+[SQLite]: https://github.com/commonsensesoftware/more-rs-cqrs/tree/main/examples/sqlite/orders
