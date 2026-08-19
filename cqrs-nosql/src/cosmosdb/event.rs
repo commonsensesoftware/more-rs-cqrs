@@ -154,16 +154,15 @@ impl<ID> EventStore<ID>
 where
     ID: Clone + Debug + Send + Sync + ToString + 'static,
 {
-    #[allow(clippy::borrowed_box)]
     fn document(
         &self,
         id: &ID,
         version: Version,
         stored_on: u64,
-        event: &Box<dyn Event>,
+        event: &(dyn Event + 'static),
     ) -> Result<Document, StoreError<ID>> {
         let schema = event.schema();
-        let content = self.options.transcoder().encode(event.as_ref())?;
+        let content = self.options.transcoder().encode(event)?;
 
         Ok(Document {
             id: key(version.sort_key()),
@@ -189,7 +188,12 @@ where
         &self.options
     }
 
-    async fn write_one(&self, id: &ID, version: Version, event: &Box<dyn Event>) -> Result<Version, StoreError<ID>> {
+    async fn write_one(
+        &self,
+        id: &ID,
+        version: Version,
+        event: &(dyn Event + 'static),
+    ) -> Result<Version, StoreError<ID>> {
         let stored_on = crate::to_secs(self.options.clock().now());
         let document = self.document(id, version, stored_on, event)?;
         let client = self.container.resolve().await.box_err()?;
@@ -226,7 +230,7 @@ where
         }
     }
 
-    async fn written(&self, id: &ID, version: Version, event: &Box<dyn Event>) -> Result<bool, StoreError<ID>> {
+    async fn written(&self, id: &ID, version: Version, event: &(dyn Event + 'static)) -> Result<bool, StoreError<ID>> {
         let client = self.container.resolve().await.box_err()?;
         let item = key(version.sort_key());
         let existing = match client.read_item(id.to_string(), &item, None).await {
@@ -272,7 +276,7 @@ where
         let mut current_version = version;
 
         for event in events {
-            let document = self.document(id, version, stored_on, event)?;
+            let document = self.document(id, version, stored_on, event.as_ref())?;
 
             batch = batch.create_item(&document).box_err()?;
             current_version = version;

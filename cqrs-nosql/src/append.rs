@@ -33,8 +33,12 @@ where
     /// * `id` - the identifier of the events to write
     /// * `version` - the [version](Version) to write with
     /// * `event` - the [event](Event) to write
-    #[allow(clippy::borrowed_box)]
-    async fn write_one(&self, id: &ID, version: Version, event: &Box<dyn Event>) -> Result<Version, StoreError<ID>>;
+    async fn write_one(
+        &self,
+        id: &ID,
+        version: Version,
+        event: &(dyn Event + 'static),
+    ) -> Result<Version, StoreError<ID>>;
 
     /// Writes multiple [events](Event) atomically and returns the last [version](Version) they were written with.
     ///
@@ -61,8 +65,7 @@ where
     ///
     /// A store is expected to read the event with strong consistency. A stale read reports that nothing was written,
     /// which reintroduces the very duplicate the read exists to prevent.
-    #[allow(clippy::borrowed_box)]
-    async fn written(&self, id: &ID, version: Version, event: &Box<dyn Event>) -> Result<bool, StoreError<ID>>;
+    async fn written(&self, id: &ID, version: Version, event: &(dyn Event + 'static)) -> Result<bool, StoreError<ID>>;
 
     /// Appends a collection of events and returns the new [version](Version).
     ///
@@ -108,7 +111,7 @@ where
             version = version.increment(ByOne);
 
             let result = if events.len() == 1 {
-                self.write_one(id, version, &events[0]).await
+                self.write_one(id, version, &*events[0]).await
             } else {
                 self.write_all(id, version, events).await
             };
@@ -127,7 +130,7 @@ where
                     // whose response it never observed, so the conflict can be this same write echoing back the event
                     // the original request already committed. the stored event settles it: if it is the event being
                     // written, the append is already durable and retrying it would append the event a second time
-                    if self.written(id, version, &events[0]).await? {
+                    if self.written(id, version, &*events[0]).await? {
                         // events are written atomically, so the last version is durable whenever the first one is
                         for _ in 1..events.len() {
                             version = version.increment(Sequence);
