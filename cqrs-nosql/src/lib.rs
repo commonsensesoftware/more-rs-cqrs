@@ -1,6 +1,20 @@
+mod prune;
 mod version;
 
+#[cfg(any(feature = "cosmosdb", feature = "dynamodb"))]
+mod append;
+
+#[cfg(any(feature = "cosmosdb", feature = "dynamodb"))]
+mod bound;
+
+#[cfg(any(feature = "cosmosdb", feature = "dynamodb"))]
+mod snapshot;
+
 pub use version::{NoSqlVersion, NoSqlVersionPart};
+
+#[cfg(feature = "cosmosdb")]
+/// Provides storage using Azure Cosmos DB.
+pub mod cosmosdb;
 
 #[cfg(feature = "dynamodb")]
 /// Provides storage using Amazon DynamoDB.

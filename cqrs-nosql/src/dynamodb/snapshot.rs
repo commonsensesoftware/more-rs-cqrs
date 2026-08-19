@@ -73,6 +73,7 @@ where
             .query()
             .table_name(&self.table)
             .expression_attribute_values(":id", S(id.to_string()))
+            .scan_index_forward(false)
             .limit(1);
 
         if let Some(predicate) = predicate {
@@ -87,8 +88,7 @@ where
                 request = request.expression_attribute_values(":version", N(version.number().to_string()));
             }
 
-            // filters are processed after key matches and we're going in reverse so we want the
-            // ones less than the last or we'll always end up with the last match
+            // the most recent snapshot taken as of the specified date and time
             if let Some((since, op)) = less_than(&predicate.since) {
                 let mut filter = String::with_capacity(17);
 
@@ -97,11 +97,8 @@ where
                 filter.push_str(" :since");
                 request = request
                     .expression_attribute_values(":since", N(crate::to_secs(since).to_string()))
-                    .filter_expression(filter)
-                    .scan_index_forward(false);
+                    .filter_expression(filter);
             }
-        } else {
-            request = request.scan_index_forward(false);
         }
 
         let query = request.key_condition_expression(condition).into_paginator();
@@ -163,7 +160,14 @@ where
     }
 
     async fn prune(&self, id: &T, retention: Option<&Retention>) -> Result<(), SnapshotError> {
-        delete_all(&self.ddb, &self.table, id.to_string(), retention).await?;
+        delete_all(
+            &self.ddb,
+            &self.table,
+            id.to_string(),
+            retention,
+            self.options.clock().now(),
+        )
+        .await?;
         Ok(())
     }
 }

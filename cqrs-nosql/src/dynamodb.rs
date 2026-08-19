@@ -2,11 +2,15 @@ mod builder;
 mod event;
 mod snapshot;
 
-pub use builder::Builder;
+pub use builder::{Builder, BuilderError};
 pub use event::EventStore;
 pub use snapshot::SnapshotStore;
 
-use crate::BoxErr;
+use crate::{
+    BoxErr,
+    bound::{greater_than, less_than},
+    prune::Prune,
+};
 use aws_sdk_dynamodb::{
     Client,
     types::{
@@ -18,10 +22,9 @@ use cqrs::snapshot::Retention;
 use std::{
     collections::HashMap,
     error::Error,
-    ops::Bound::{self, Excluded, Included},
     str::FromStr,
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime},
 };
 
 cfg_select! {
@@ -32,23 +35,13 @@ cfg_select! {
     _ => {}
 }
 
-#[inline]
-fn op<T: Copy>(bound: &Bound<T>, op1: &'static str, op2: &'static str) -> Option<(T, &'static str)> {
-    match bound {
-        Included(value) => Some((*value, op1)),
-        Excluded(value) => Some((*value, op2)),
-        _ => None,
-    }
-}
+// REMARKS: a transaction is limited to 100 items, which is the number of events that can be saved atomically
+// REF: https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html
+pub(crate) const MAX_TRANSACTION_SIZE: usize = 100;
 
-#[inline]
-fn greater_than<T: Copy>(bound: &Bound<T>) -> Option<(T, &'static str)> {
-    op(bound, ">=", ">")
-}
-#[inline]
-fn less_than<T: Copy>(bound: &Bound<T>) -> Option<(T, &'static str)> {
-    op(bound, "<=", "<")
-}
+// a batch write is limited to 25 items, which is unrelated to the size of a transaction
+// REF: https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html
+const MAX_WRITE_SIZE: usize = 25;
 
 fn coerce<T: FromStr + Default>(
     name: &str,
@@ -64,17 +57,16 @@ fn coerce<T: FromStr + Default>(
     T::default()
 }
 
-// REMARKS: there is no efficient way to know how many items there are and delete them in an atomic
-// manner. a transaction only allows 100 items, but there could be more. this operation is idempotent.
-// if a failure occurs, it is transient (expect bugs) and can safely be retried until it succeeds.
+// REMARKS: there is no efficient way to know how many items there are and delete them in an atomic manner. a
+// transaction only allows 100 items, but there could be more. this operation is idempotent. if a failure occurs, it is
+// transient (expect bugs) and can safely be retried until it succeeds.
 async fn delete_all(
     client: &Client,
     table: &str,
     id: String,
     retention: Option<&Retention>,
+    now: SystemTime,
 ) -> Result<(), Box<dyn Error + Send>> {
-    const MAX_BATCH_SIZE: usize = 25;
-
     let query = client
         .query()
         .table_name(table)
@@ -84,40 +76,19 @@ async fn delete_all(
         .projection_expression("id, version, takenOn")
         .into_paginator();
     let mut keys = query.items().send();
-    let mut batch = Vec::with_capacity(MAX_BATCH_SIZE);
-    let mut kept = 0u8;
+    let mut batch = Vec::with_capacity(MAX_WRITE_SIZE);
+    let mut prune = Prune::new(retention, now);
     let mut count = 0usize;
 
     while let Some(key) = keys.next().await {
         let mut attributes = key.box_err()?;
 
-        if let Some(retention) = retention {
-            if let Some(age) = retention.age {
-                let age = (SystemTime::now() - age).duration_since(UNIX_EPOCH).unwrap().as_secs();
-                let taken_on = attributes
-                    .remove("takenOn")
-                    .unwrap()
-                    .as_n()
-                    .unwrap()
-                    .parse::<u64>()
-                    .unwrap();
-
-                if age >= taken_on {
-                    if let Some(keep) = retention.count {
-                        if kept < keep {
-                            kept += 1;
-                            continue;
-                        }
-                    } else {
-                        continue;
-                    }
-                }
-            } else if let Some(keep) = retention.count
-                && kept < keep
-            {
-                kept += 1;
-                continue;
-            }
+        if !prune.expired(Duration::from_secs(coerce(
+            "takenOn",
+            &attributes,
+            AttributeValue::as_n,
+        ))) {
+            continue;
         }
 
         batch.push(
@@ -132,20 +103,19 @@ async fn delete_all(
                 .build(),
         );
 
-        if batch.len() == MAX_BATCH_SIZE {
+        if batch.len() == MAX_WRITE_SIZE {
             client
                 .batch_write_item()
                 .request_items(table, batch)
                 .send()
                 .await
                 .box_err()?;
-            batch = Vec::with_capacity(MAX_BATCH_SIZE);
+            batch = Vec::with_capacity(MAX_WRITE_SIZE);
             count += 1;
 
-            // add an artificial yield so we don't get throttled
-            // no there is no direct dependency on tokio to use the async variant
+            // yield so we don't get throttled; there's no direct dependency on tokio for the async variant
             // REF: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/TroubleshootingThrottlingOnDemand.html
-            if (count * MAX_BATCH_SIZE).is_multiple_of(750) {
+            if (count * MAX_WRITE_SIZE).is_multiple_of(750) {
                 thread::sleep(Duration::from_secs(1));
             }
         }
