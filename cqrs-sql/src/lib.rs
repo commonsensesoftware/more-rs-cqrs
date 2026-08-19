@@ -35,7 +35,7 @@ pub use providers::sqlite;
 
 use std::{
     error::Error,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 cfg_select! {
@@ -58,4 +58,22 @@ impl<T, E: Error + Send + 'static> BoxErr<T> for Result<T, E> {
 
 pub(crate) fn to_secs(timestamp: SystemTime) -> i64 {
     timestamp.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
+}
+
+/// Gets the cutoff of a retained age as the number of seconds since the epoch.
+///
+/// # Arguments
+///
+/// * `now` - the current [date and time](SystemTime)
+/// * `age` - the [age](Duration) of the items to retain
+///
+/// # Remarks
+///
+/// The cutoff is clamped to the epoch because an age that predates it cannot expire anything.
+#[allow(dead_code)]
+pub(crate) fn cutoff(now: SystemTime, age: Duration) -> i64 {
+    now.checked_sub(age)
+        .and_then(|cutoff| cutoff.duration_since(UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_secs() as i64)
+        .unwrap_or_default()
 }

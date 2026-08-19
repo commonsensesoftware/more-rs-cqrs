@@ -6,7 +6,7 @@ use common::{
     scenario,
 };
 use cqrs::{
-    Repository, RepositoryError,
+    Clock, Repository, RepositoryError, VirtualClock,
     snapshot::{Retention, Store},
 };
 use cqrs_sql::mysql::{EventStore, Migrator, SnapshotStore};
@@ -155,6 +155,63 @@ async fn verify_mysql_prunes_snapshots() -> TestResult {
 
     snapshots.prune(&id, None).await?;
     assert_eq!(count_snapshots(&pool, TABLE).await?, 0, "expected all snapshots pruned");
+    Ok(())
+}
+
+#[tokio::test]
+async fn verify_mysql_prunes_stale_snapshots() -> TestResult {
+    // arrange
+    const TABLE: &str = "TMP_16c8b3f0d95a47e2b7c1a4e6f0d2938b";
+
+    let (_server, url) = start_server().await?;
+    let clock = VirtualClock::new();
+    let snapshots = SnapshotStore::<String>::builder()
+        .url(&url)
+        .table(TABLE)
+        .clock(Arc::new(clock.clone()) as Arc<dyn Clock>)
+        .transcoder(domain::transcoder::snapshots())
+        .build()?;
+    let events = EventStore::<String>::builder()
+        .url(&url)
+        .table("TMP_9b2e5d1a7c0f43e8a6d3b8c5f1e07a24")
+        .transcoder(domain::transcoder::events())
+        .build()?;
+    let migrator = Migrator::new();
+
+    migrator.configure(&events, &url, PoolOptions::default());
+    migrator.configure(&snapshots, &url, PoolOptions::default());
+    migrator.run().await?;
+
+    let pool = PoolOptions::default().connect(&url).await?;
+    let repository = Repository::<Account>::new(events);
+    let id = scenario::open_new_account(&repository, "12345", 50.0).await?;
+
+    for _ in 0..3 {
+        scenario::new_monthly_statement(&repository, &id, &snapshots).await?;
+        scenario::make_deposit(&repository, &id, 10.0).await?;
+    }
+
+    // everything taken so far is now older than the retained age, but the last snapshot is taken after the clock
+    // moves forward
+    clock.wind(Duration::from_secs(120));
+    scenario::new_monthly_statement(&repository, &id, &snapshots).await?;
+
+    assert_eq!(count_snapshots(&pool, TABLE).await?, 4, "expected 4 snapshots");
+
+    // act
+    let retention = Retention {
+        count: Some(2),
+        age: Some(Duration::from_secs(60)),
+    };
+
+    snapshots.prune(&id, Some(&retention)).await?;
+
+    // assert
+    assert_eq!(
+        count_snapshots(&pool, TABLE).await?,
+        1,
+        "expected only the snapshot within the retained age"
+    );
     Ok(())
 }
 

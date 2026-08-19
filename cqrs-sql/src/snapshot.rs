@@ -1,5 +1,5 @@
 pub(crate) mod command;
-mod prune;
+pub(crate) mod prune;
 mod store;
 mod upsert;
 

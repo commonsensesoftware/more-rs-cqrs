@@ -6,7 +6,7 @@ use common::{
     scenario,
 };
 use cqrs::{
-    Repository, RepositoryError,
+    Clock, Repository, RepositoryError, VirtualClock,
     snapshot::{Retention, Store},
 };
 use cqrs_sql::postgres::{EventStore, Migrator, SnapshotStore};
@@ -145,6 +145,65 @@ async fn verify_postgres_prunes_snapshots() -> TestResult {
 
     snapshots.prune(&id, None).await?;
     assert_eq!(count_snapshots(&pool, TABLE).await?, 0, "expected all snapshots pruned");
+    Ok(())
+}
+
+#[tokio::test]
+async fn verify_postgres_prunes_stale_snapshots() -> TestResult {
+    // arrange
+    const TABLE: &str = "TMP_7d1f4b0c9a2e46d8b3c5e7a1f0d29b64";
+
+    let postgres = PostgresServer::default().start().await?;
+    let port = postgres.get_host_port_ipv4(5432).await?;
+    let url = format!("postgres://postgres:postgres@127.0.0.1:{}/postgres", port);
+    let clock = VirtualClock::new();
+    let snapshots = SnapshotStore::<String>::builder()
+        .url(&url)
+        .table(TABLE)
+        .clock(Arc::new(clock.clone()) as Arc<dyn Clock>)
+        .transcoder(domain::transcoder::snapshots())
+        .build()?;
+    let events = EventStore::<String>::builder()
+        .url(&url)
+        .table("TMP_3a9c6e2b8d0f41a7b5c4d8e2f6a0937b")
+        .transcoder(domain::transcoder::events())
+        .build()?;
+    let migrator = Migrator::new();
+
+    migrator.configure(&events, &url, PoolOptions::default());
+    migrator.configure(&snapshots, &url, PoolOptions::default());
+    migrator.run().await?;
+
+    let pool = PoolOptions::default().connect(&url).await?;
+    let repository = Repository::<Account>::new(events);
+    let id = scenario::open_new_account(&repository, "12345", 50.0).await?;
+
+    for _ in 0..3 {
+        scenario::new_monthly_statement(&repository, &id, &snapshots).await?;
+        scenario::make_deposit(&repository, &id, 10.0).await?;
+    }
+
+    // everything taken so far is now older than the retained age, but the last snapshot is taken after the clock
+    // moves forward
+    clock.wind(Duration::from_secs(120));
+    scenario::new_monthly_statement(&repository, &id, &snapshots).await?;
+
+    assert_eq!(count_snapshots(&pool, TABLE).await?, 4, "expected 4 snapshots");
+
+    // act
+    let retention = Retention {
+        count: Some(2),
+        age: Some(Duration::from_secs(60)),
+    };
+
+    snapshots.prune(&id, Some(&retention)).await?;
+
+    // assert
+    assert_eq!(
+        count_snapshots(&pool, TABLE).await?,
+        1,
+        "expected only the snapshot within the retained age"
+    );
     Ok(())
 }
 
