@@ -1,7 +1,7 @@
 use super::Upsert;
 use crate::{
     SqlVersion,
-    sql::{self, Provider, greater_than},
+    sql::{self, Provider, greater_than, less_than},
 };
 use cqrs::{Mask, snapshot::Predicate};
 use sqlx::{Database, Encode, QueryBuilder, Type};
@@ -40,19 +40,18 @@ where
                 .push_bind(version.number());
         }
 
-        if let Some((since, op)) = greater_than(&predicate.since) {
+        // the most recent snapshot taken as of the specified date and time, which is the snapshot the events that
+        // follow it can be replayed from
+        if let Some((since, op)) = less_than(&predicate.since) {
             select
-                .push(" AND ")
+                .push(" AND taken_on ")
                 .push(op)
                 .push(" ")
-                .push_bind(crate::to_secs(since))
-                .push(" ORDER BY taken_on");
+                .push_bind(crate::to_secs(since));
         }
-    } else {
-        select.push(" ORDER BY version DESC");
     }
 
-    select.push(" LIMIT 1;");
+    select.push(" ORDER BY version DESC LIMIT 1;");
     select
 }
 

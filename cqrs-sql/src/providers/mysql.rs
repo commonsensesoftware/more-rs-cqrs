@@ -4,7 +4,6 @@ use crate::{
 };
 use cqrs::{Clock, snapshot::Retention};
 use sqlx::{Encode, MySql, QueryBuilder, Type};
-use std::time::UNIX_EPOCH;
 
 impl sql::Provider for MySql {
     // MySQL only treats a double quote as an identifier delimiter when ANSI_QUOTES is among
@@ -38,33 +37,19 @@ where
     ) -> sqlx::QueryBuilder<MySql> {
         let mut delete = QueryBuilder::new("WITH s2 AS (");
 
+        delete.push("SELECT id, version");
+        snapshot::prune::columns(&mut delete, retention);
         delete
-            .push("SELECT id, version FROM ")
+            .push(" FROM ")
             .push(MySql::quote(table))
             .push(" WHERE id = ")
-            .push_bind(id);
-
-        // SAFETY: unwrap is allowed here as before epoch is a bug in the clock
-        // LIMIT must be specified so use the largest possible value
-        if let Some(count) = retention.count {
-            if let Some(age) = retention.age {
-                let taken_on = (clock.now() - age).duration_since(UNIX_EPOCH).unwrap();
-                delete.push(" AND taken_on >= ").push_bind(taken_on.as_secs() as i64);
-            }
-
-            delete
-                .push(" ORDER BY taken_on DESC LIMIT 18446744073709551615 OFFSET ")
-                .push_bind(count as i16);
-        } else if let Some(age) = retention.age {
-            let taken_on = (clock.now() - age).duration_since(UNIX_EPOCH).unwrap();
-            delete.push(" AND taken_on <= ").push_bind(taken_on.as_secs() as i64);
-        }
-
-        delete
+            .push_bind(id)
             .push(") DELETE s1 FROM ")
             .push(MySql::quote(table))
-            .push(" s1 INNER JOIN s2 WHERE s1.id = s2.id AND s1.version = s2.version;");
+            .push(" s1 INNER JOIN s2 WHERE s1.id = s2.id AND s1.version = s2.version");
 
+        snapshot::prune::stale(&mut delete, "s2.", clock, retention);
+        delete.push(';');
         delete
     }
 }

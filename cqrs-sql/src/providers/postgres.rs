@@ -4,7 +4,6 @@ use crate::{
 };
 use cqrs::{Clock, snapshot::Retention};
 use sqlx::{Encode, Postgres, QueryBuilder, Type};
-use std::time::UNIX_EPOCH;
 
 impl sql::Provider for Postgres {}
 
@@ -31,30 +30,19 @@ where
     ) -> sqlx::QueryBuilder<Postgres> {
         let mut delete = QueryBuilder::new("WITH s2 AS (");
 
+        delete.push("SELECT id, version");
+        snapshot::prune::columns(&mut delete, retention);
         delete
-            .push("SELECT id, version FROM ")
+            .push(" FROM ")
             .push(Postgres::quote(table))
             .push(" WHERE id = ")
-            .push_bind(id);
-
-        // SAFETY: unwrap is allowed here as before epoch is a bug in the clock
-        if let Some(count) = retention.count {
-            if let Some(age) = retention.age {
-                let taken_on = (clock.now() - age).duration_since(UNIX_EPOCH).unwrap();
-                delete.push(" AND taken_on >= ").push_bind(taken_on.as_secs() as i64);
-            }
-
-            delete.push(" ORDER BY taken_on DESC OFFSET ").push_bind(count as i16);
-        } else if let Some(age) = retention.age {
-            let taken_on = (clock.now() - age).duration_since(UNIX_EPOCH).unwrap();
-            delete.push(" AND taken_on <= ").push_bind(taken_on.as_secs() as i64);
-        }
-
-        delete
+            .push_bind(id)
             .push(") DELETE FROM ")
             .push(Postgres::quote(table))
-            .push(" s1 USING s2 WHERE s1.id = s2.id AND s1.version = s2.version;");
+            .push(" s1 USING s2 WHERE s1.id = s2.id AND s1.version = s2.version");
 
+        snapshot::prune::stale(&mut delete, "s2.", clock, retention);
+        delete.push(';');
         delete
     }
 }
