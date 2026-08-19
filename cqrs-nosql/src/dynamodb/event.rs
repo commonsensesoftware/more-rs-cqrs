@@ -1,7 +1,9 @@
-use super::{Builder, coerce, delete_all, greater_than, less_than};
+use super::{Builder, MAX_TRANSACTION_SIZE, coerce, delete_all, greater_than, less_than};
 use crate::{
     BoxErr, NoSqlVersion,
-    NoSqlVersionPart::{Sequence, Version as ByOne},
+    NoSqlVersionPart::Sequence,
+    append::Append,
+    snapshot::{get_snapshot, select_version},
     version::{from_sort_key, new_version},
 };
 use async_stream::try_stream;
@@ -15,43 +17,54 @@ use aws_sdk_dynamodb::{
     primitives::Blob,
     types::{
         AttributeValue::{self as Attr, B, N, S},
-        Put, TransactWriteItem, Update,
+        Put,
+        ReturnValuesOnConditionCheckFailure::AllOld,
+        TransactWriteItem, Update,
     },
 };
 use cqrs::{
-    Clock, Mask, Range, Version,
-    event::{Event, EventStream, IdStream, Predicate, PredicateBuilder, Store, StoreError, StoreOptions},
+    Clock, Range, Version,
+    event::{Event, EventStream, IdStream, Predicate, Store, StoreError, StoreOptions},
     message::{Saved, Schema},
 };
-use std::{error::Error, fmt::Debug, str::FromStr, sync::Arc, time::SystemTime};
+use futures::stream;
+use std::{error::Error, fmt::Debug, ops::Bound, str::FromStr, sync::Arc, time::SystemTime};
 
 fn apply_predicate<T>(
     mut request: QueryFluentBuilder,
     predicate: Option<&Predicate<T>>,
-    mask: Option<&(dyn Mask + 'static)>,
+    version: Bound<Version>,
 ) -> QueryFluentBuilder
 where
     T: Debug + Send + ToString,
 {
+    let mut condition = String::new();
+
+    if let Some(id) = predicate.and_then(|predicate| predicate.id) {
+        condition.push_str("(id = :id)");
+        request = request.expression_attribute_values(":id", S(id.to_string()));
+    }
+
+    // the version bound has already been resolved against the snapshot a load is seeded
+    // from, if any, so it is never masked
+    if let Some((version, op)) = greater_than(&version) {
+        if !condition.is_empty() {
+            condition.push_str(" AND ");
+        }
+
+        condition.push_str("(version ");
+        condition.push_str(op);
+        condition.push_str(" :version)");
+        request = request.expression_attribute_values(":version", N(version.sort_key().to_string()));
+    }
+
+    // a key condition that is empty would replace the one the caller has already configured
+    if !condition.is_empty() {
+        request = request.key_condition_expression(condition);
+    }
+
     if let Some(predicate) = predicate {
-        let mut condition = String::new();
         let mut filter = String::new();
-
-        if let Some(id) = predicate.id {
-            condition.push_str("(id = :id)");
-            request = request.expression_attribute_values(":id", S(id.to_string()));
-        }
-
-        if let Some((mut version, op)) = greater_than(&predicate.version) {
-            if let Some(mask) = mask {
-                version = version.unmask(mask);
-            }
-
-            condition.push_str(" AND (version ");
-            condition.push_str(op);
-            condition.push_str(" :version)");
-            request = request.expression_attribute_values(":version", N(version.sort_key().to_string()));
-        }
 
         if let Some((from, op)) = greater_than(&predicate.stored_on.from) {
             filter.push_str("(storedOn ");
@@ -120,11 +133,9 @@ where
         if !filter.is_empty() {
             request = request.filter_expression(filter);
         }
-
-        request.key_condition_expression(condition)
-    } else {
-        request
     }
+
+    request
 }
 
 /// Represents an Amazon DynamoDB [event store](Store).
@@ -156,11 +167,17 @@ impl<ID> EventStore<ID> {
     }
 }
 
-impl<ID> EventStore<ID>
+#[async_trait]
+impl<ID> Append<ID> for EventStore<ID>
 where
     ID: Clone + Debug + Send + Sync + ToString + 'static,
 {
-    #[allow(clippy::borrowed_box)]
+    const MAX_BATCH_SIZE: usize = MAX_TRANSACTION_SIZE;
+
+    fn options(&self) -> &StoreOptions<ID> {
+        &self.options
+    }
+
     async fn write_one(&self, id: &ID, version: Version, event: &Box<dyn Event>) -> Result<Version, StoreError<ID>> {
         let stored_on = crate::to_secs(self.options.clock().now());
         let schema = event.schema();
@@ -191,7 +208,8 @@ where
                 .item("kind", S(schema.kind().into()))
                 .item("revision", N(schema.version().to_string()))
                 .item("content", B(Blob::new(content)))
-                .condition_expression("attribute_not_exists(id) AND attribute_not_exists(version)");
+                .condition_expression("attribute_not_exists(id) AND attribute_not_exists(version)")
+                .return_values_on_condition_check_failure(AllOld);
 
             if let Some(cid) = event.correlation_id() {
                 put = put.item("correlationId", S(cid.into()));
@@ -238,7 +256,9 @@ where
             .item("kind", S(schema.kind().into()))
             .item("revision", N(schema.version().to_string()))
             .item("content", B(Blob::new(content)))
-            .condition_expression("attribute_not_exists(id) AND attribute_not_exists(version)");
+            .condition_expression("attribute_not_exists(id) AND attribute_not_exists(version)")
+            // the conflicting item identifies whether the version was taken or the aggregate was deleted
+            .return_values_on_condition_check_failure(AllOld);
 
         if let Some(cid) = event.correlation_id() {
             request = request.item("correlationId", S(cid.into()));
@@ -255,6 +275,41 @@ where
         } else {
             Ok(version)
         }
+    }
+
+    async fn written(&self, id: &ID, version: Version, event: &Box<dyn Event>) -> Result<bool, StoreError<ID>> {
+        let output = self
+            .ddb
+            .get_item()
+            .table_name(&self.table)
+            .key("id", S(id.to_string()))
+            .key("version", N(version.sort_key().to_string()))
+            .consistent_read(true)
+            .send()
+            .await
+            .box_err()?;
+        let Some(existing) = output.item else {
+            return Ok(false);
+        };
+        let schema = event.schema();
+        let content = self.options.transcoder().encode(event.as_ref())?;
+
+        Ok(existing
+            .get("kind")
+            .and_then(|value| value.as_s().ok())
+            .map(String::as_str)
+            == Some(schema.kind())
+            && coerce::<u8>("revision", &existing, Attr::as_n) == schema.version()
+            && existing
+                .get("correlationId")
+                .and_then(|value| value.as_s().ok())
+                .map(String::as_str)
+                == event.correlation_id()
+            && existing
+                .get("content")
+                .and_then(|value| value.as_b().ok())
+                .map(Blob::as_ref)
+                == Some(&content[..]))
     }
 
     async fn write_all(
@@ -295,7 +350,8 @@ where
                 .item("kind", S(schema.kind().into()))
                 .item("revision", N(schema.version().to_string()))
                 .item("content", B(Blob::new(content)))
-                .condition_expression("attribute_not_exists(id) AND attribute_not_exists(version)");
+                .condition_expression("attribute_not_exists(id) AND attribute_not_exists(version)")
+                .return_values_on_condition_check_failure(AllOld);
 
             if let Some(cid) = event.correlation_id() {
                 put = put.item("correlationId", S(cid.into()));
@@ -347,15 +403,41 @@ where
         (&self.options).into()
     }
 
+    /// Streams the unique sets of all identifiers in the store.
+    ///
+    /// # Arguments
+    ///
+    /// * `stored_on` - the [date](SystemTime) [range](Range) used to filter results
+    ///
+    /// # Remarks
+    ///
+    /// The first event of an aggregate identifies it, but a query requires the partition key, which is the very
+    /// identifier being looked up, so the table is scanned instead. A global secondary index on the version would allow
+    /// a query at the expense of additional storage.
     async fn ids(&self, stored_on: Range<SystemTime>) -> IdStream<T> {
-        let request = self
+        let mut filter = String::from("version = :version");
+        let mut request = self
             .ddb
-            .query()
+            .scan()
             .table_name(&self.table)
-            .key_condition_expression("version = :version")
+            .projection_expression("id")
             .expression_attribute_values(":version", N(new_version(1, 0).sort_key().to_string()));
-        let predicate = PredicateBuilder::<T>::new(None).stored_on(stored_on).build();
-        let query = apply_predicate(request, Some(&predicate), self.options.mask()).into_paginator();
+
+        if let Some((from, op)) = greater_than(&stored_on.from) {
+            filter.push_str(" AND storedOn ");
+            filter.push_str(op);
+            filter.push_str(" :from");
+            request = request.expression_attribute_values(":from", N(crate::to_secs(from).to_string()));
+        }
+
+        if let Some((to, op)) = less_than(&stored_on.to) {
+            filter.push_str(" AND storedOn ");
+            filter.push_str(op);
+            filter.push_str(" :to");
+            request = request.expression_attribute_values(":to", N(crate::to_secs(to).to_string()));
+        }
+
+        let query = request.filter_expression(filter).into_paginator();
         let mut items = query.items().send();
 
         Box::pin(try_stream! {
@@ -366,13 +448,40 @@ where
         })
     }
 
+    /// Loads a sequence of [events](Event).
+    ///
+    /// # Arguments
+    ///
+    /// * `predicate` - the optional [predicate](Predicate) used to filter events
+    ///
+    /// # Remarks
+    ///
+    /// If a [snapshot store](cqrs::snapshot::Store) is configured, the stream is seeded with the most recent
+    /// [snapshot](cqrs::snapshot::Snapshot) and only the events which are not already summarized by it are loaded.
     async fn load<'a>(&self, predicate: Option<&'a Predicate<'a, T>>) -> EventStream<'a, T> {
+        let snapshot = match get_snapshot(self.options.snapshots(), predicate).await {
+            Ok(snapshot) => snapshot,
+            Err(error) => return Box::pin(stream::iter(vec![Err(StoreError::from(error))])),
+        };
+        let mut version = Bound::Unbounded;
+
+        if let Some(filter) = predicate {
+            version = select_version(snapshot.as_ref(), filter, self.options.mask());
+        }
+
         let request = self.ddb.query().table_name(&self.table);
-        let query = apply_predicate(request, predicate, self.options.mask()).into_paginator();
+        let query = apply_predicate(request, predicate, version).into_paginator();
         let mut items = query.items().send();
         let options = self.options.clone();
 
         Box::pin(try_stream! {
+            if predicate.is_some()
+                && let Some(snapshot) = snapshot
+            {
+                let event = options.transcoder().decode(&snapshot.schema, &snapshot.content)?;
+                yield Saved::new(event, snapshot.version);
+            }
+
             while let Some(item) = items.next().await {
                 let attributes = item.box_err()?;
                 let mut version = from_sort_key(coerce("version", &attributes, Attr::as_n));
@@ -402,51 +511,7 @@ where
         expected_version: Version,
         events: &[Box<dyn Event>],
     ) -> Result<Version, StoreError<T>> {
-        if events.is_empty() {
-            return Ok(expected_version);
-        }
-
-        let mut version = if expected_version != Version::default()
-            && let Some(mask) = self.options.mask()
-        {
-            expected_version.unmask(mask)
-        } else {
-            expected_version
-        };
-
-        if version.invalid() {
-            return Err(StoreError::InvalidVersion);
-        }
-
-        loop {
-            version = version.increment(ByOne);
-
-            let result = if events.len() == 1 {
-                self.write_one(id, version, &events[0]).await
-            } else {
-                self.write_all(id, version, events).await
-            };
-
-            match result {
-                Ok(current) => {
-                    version = current;
-                    break;
-                }
-                Err(error) => {
-                    if matches!(error, StoreError::Conflict(_, _)) && !self.options.concurrency().enforced() {
-                        continue;
-                    } else {
-                        return Err(error);
-                    }
-                }
-            }
-        }
-
-        if let Some(mask) = self.options.mask() {
-            version = version.mask(mask);
-        }
-
-        Ok(version)
+        self.append(id, expected_version, events).await
     }
 
     async fn delete(&self, id: &T) -> Result<(), StoreError<T>> {
@@ -458,7 +523,7 @@ where
             snapshots.prune(id, None).await?;
         }
 
-        delete_all(&self.ddb, &self.table, id.to_string(), None).await?;
+        delete_all(&self.ddb, &self.table, id.to_string(), None, self.options.clock().now()).await?;
         Ok(())
     }
 }

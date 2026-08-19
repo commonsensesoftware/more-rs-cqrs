@@ -17,20 +17,31 @@ name = "cqrs_nosql"
 di = ["more-cqrs/di", "dep:more-di", "dep:more-options", "dep:serde"]
 migrate = []
 dynamodb = ["dep:aws-config", "dep:aws-sdk-dynamodb"]
+cosmosdb = ["dep:azure_data_cosmos", "dep:base64", "dep:serde"]
 
 [dependencies]
 more-cqrs = { path = "../cqrs" }
 aws-config = { version = "1.10.1", optional = true }
 aws-sdk-dynamodb = { version = "1.120.0", optional = true }
+azure_data_cosmos = { workspace = true, optional = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
+base64 = { version = "0.22.1", optional = true }
 futures = { workspace = true, features = ["executor"] }
 futures-core = { workspace = true }
 more-di = { workspace = true, features = ["async"], optional = true }
 more-options = { workspace = true, optional = true, features = ["async", "di"] }
 thiserror = { workspace = true }
 uuid = { workspace = true }
-serde = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
 
 [dev-dependencies]
+more-cqrs = { path = "../cqrs", features = ["json"] }
+more-cqrs-nosql = { path = ".", features = ["cosmosdb", "dynamodb", "migrate"] }
+# the Azure Cosmos DB emulator only accepts its well-known account key
+azure_data_cosmos = { workspace = true, features = ["key_auth"] }
 rstest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+testcontainers-modules = { workspace = true, features = ["dynamodb"] }
+tokio = { workspace = true, features = ["full"] }
