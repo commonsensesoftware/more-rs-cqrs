@@ -5,12 +5,21 @@ use std::error::Error;
 
 // #[transcode] will:
 // 1. erase 'mod events'; this is required because Rust doesn't currently
-//    support 'inner' macros (e.g. #![transcode])
+//    support 'inner' macros (e.g. #![transcode]). the attributes applied to the
+//    module are applied to each item it contained and its documentation, if any,
+//    is forwarded to the module created in 2. the visibility of the module and
+//    the scope of any 'use' statement it declares cannot be preserved
 // 2. create a public module named 'transcoder'
 // 3. create a public factory function named 'events' in the 'transcoder' module
 //    which returns Transcoder<dyn Event> for all of the defined events
 // 4. create a public factory function named 'snapshots' in the 'transcoder' module
 //    which returns Transcoder<dyn Snapshot> for all of the defined snapshots, if any
+//
+// every structure, enumeration, and union annotated with #[event] or #[snapshot],
+// including those declared by a nested module, is registered. events defined in
+// another file or crate are registered by listing their paths:
+//
+// #[transcode(with = Json, events(other::Rebased), snapshots(other::Ledger))]
 //
 // this example uses ProtoBuf (via prost) for message encoding, but the following
 // other formats are supported behind features:
