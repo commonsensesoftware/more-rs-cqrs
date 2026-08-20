@@ -68,10 +68,28 @@ pub fn event(metadata: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// * `name` - the name of the generated `Transcoder` factory function, which defaults to `transcoder`
 /// * `with` - the type of `Encoding` used to transcode events
+/// * `events` - the optional paths of additional events declared outside of the module
+/// * `snapshots` - the optional paths of additional snapshots declared outside of the module
 ///
 /// # Remarks
 ///
-/// This attribute can only be applied to a module.
+/// This attribute can only be applied to an inline module. All of the structures, enumerations, and unions annotated
+/// with `#[event]` or `#[snapshot]`, including those declared by a nested module, are registered with the generated
+/// transcoders. Messages declared elsewhere, such as in another file or crate, are registered by listing their paths
+/// with the `events` and `snapshots` arguments.
+///
+/// The module itself is erased and its items are expanded into the enclosing scope; Rust does not currently support an
+/// inner attribute macro (for example, `#![transcode]`), which would otherwise make the module unnecessary. The
+/// following are honored when the module is erased:
+///
+/// * Attributes, such as `#[cfg]` or `#[allow]`, are applied to each of the expanded items and the generated module
+/// * Documentation is forwarded to the generated module
+/// * A `cfg` gating an individual message also gates its registration
+///
+/// The following cannot be honored and are ignored:
+///
+/// * The visibility of the module; the visibility of each expanded item is used instead
+/// * The scope of any `use` statement, which is expanded into the enclosing scope
 #[proc_macro_attribute]
 pub fn transcode(metadata: TokenStream, input: TokenStream) -> TokenStream {
     let attribute = parse_macro_input!(metadata as TranscodeAttribute);

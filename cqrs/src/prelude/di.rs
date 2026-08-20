@@ -17,10 +17,17 @@ cfg_select! {
     _ => {}
 }
 
+/// Merges the configured transcoders into a single transcoder.
+///
+/// # Panics
+///
+/// A message can only be registered by one transcoder. Configuring the same message more than once is a configuration
+/// error and panics with the offending [schema](crate::message::Schema), just as registering it twice with the same
+/// transcoder would.
 fn merge<M: Message + ?Sized>(mut transcoders: Vec<Transcoder<M>>) -> Transcoder<M> {
     if let Some(mut merged) = transcoders.pop() {
         for transcoder in transcoders.drain(..) {
-            merged.merge(transcoder);
+            merged.merge(transcoder).unwrap();
         }
 
         merged

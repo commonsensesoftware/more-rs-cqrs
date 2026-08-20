@@ -12,14 +12,19 @@ pub struct Json<T> {
 }
 
 impl<T> Json<T> {
-    /// Initializes a new [JSON](Json) message encoding for the specified message type and version.
+    /// Initializes a new [JSON](Json) message encoding for the specified [schema](Schema).
     ///
     /// # Arguments
     ///
-    /// * `version` - the supported message version
-    pub fn version(version: u8) -> Self {
+    /// * `schema` - the [schema](Schema) the encoding applies to
+    ///
+    /// # Remarks
+    ///
+    /// This is meant for a scenario where the [schema](Schema) of a message cannot be derived from the message itself,
+    /// such as decoding messages that were stored before the message type was moved or renamed.
+    pub fn with_schema(schema: Schema) -> Self {
         Self {
-            schema: Schema::new(std::any::type_name::<T>(), version),
+            schema,
             _marker: Default::default(),
         }
     }
@@ -38,6 +43,15 @@ impl<T: Encoded> Json<T> {
     /// Initializes a new [JSON](Json) message encoding for the specified [encoded](Encoded) message type.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Initializes a new [JSON](Json) message encoding for the specified message type and version.
+    ///
+    /// # Arguments
+    ///
+    /// * `version` - the supported message version
+    pub fn version(version: u8) -> Self {
+        Self::with_schema(Schema::new(T::schema().kind(), version))
     }
 }
 

@@ -88,9 +88,32 @@ impl<T: ?Sized + Message> Transcoder<T> {
     /// # Arguments
     ///
     /// * `other` - the [transcoder](Transcoder) to merge into the current instance
-    pub fn merge(&mut self, other: Transcoder<T>) {
-        for (key, encoding) in other.encodings {
-            self.encodings.entry(key).or_insert(encoding);
+    ///
+    /// # Returns
+    ///
+    /// An [error](EncodingError) if an [encoding](Encoding) has already been registered for any [schema](Schema) in
+    /// `other`, which is the same outcome as registering each of its [encodings](Encoding) individually. The current
+    /// instance is left unchanged when an [error](EncodingError) is returned.
+    ///
+    /// # Remarks
+    ///
+    /// If a collision occurs, lowest ordered collision is reported so that a configuration error is reproducible when
+    /// more than one message collides.
+    pub fn merge(&mut self, other: Transcoder<T>) -> Result<(), EncodingError> {
+        if let Some(schema) = other
+            .encodings
+            .keys()
+            .filter(|schema| self.encodings.contains_key(*schema))
+            .min_by(|left, right| {
+                left.kind()
+                    .cmp(right.kind())
+                    .then_with(|| left.version().cmp(&right.version()))
+            })
+        {
+            return Err(EncodingError::DuplicateSchema(schema.clone()));
         }
+
+        self.encodings.extend(other.encodings);
+        Ok(())
     }
 }
