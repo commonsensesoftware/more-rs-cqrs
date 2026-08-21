@@ -47,7 +47,6 @@ where
     }
 }
 
-#[inline]
 fn and_stored_on<'a, D>(builder: &mut QueryBuilder<D>, (time, op): (SystemTime, &str))
 where
     D: Database,

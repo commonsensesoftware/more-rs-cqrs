@@ -9,7 +9,6 @@ trait Time: Sized {
 }
 
 impl Time for SystemTime {
-    #[inline]
     fn to_secs(self) -> u64 {
         self.duration_since(UNIX_EPOCH).unwrap().as_secs()
     }

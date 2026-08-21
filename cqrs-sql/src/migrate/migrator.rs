@@ -46,7 +46,6 @@ where
     /// * `migration` - the [migration](Migration) to configure
     /// * `url` - the URL representing the database connection string
     /// * `options` - the [connection pool options](PoolOptions) to use during the migration
-    #[inline]
     pub fn configure<M, S>(&self, migration: M, url: S, options: PoolOptions<DB>)
     where
         M: Into<Migration>,

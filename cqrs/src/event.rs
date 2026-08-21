@@ -11,7 +11,6 @@ pub use receiver::Receiver;
 pub use store::{EventStream, IdStream, Store, StoreError, StoreOptions};
 
 /// Creates and returns a new [event](Event) [transcoder](crate::message::Transcoder).
-#[inline]
 pub fn transcoder() -> crate::message::Transcoder<dyn Event> {
     crate::message::Transcoder::<dyn Event>::new()
 }

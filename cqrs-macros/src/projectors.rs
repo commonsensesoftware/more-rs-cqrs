@@ -361,7 +361,6 @@ fn get_projectors(items: &[Item], metadata: Vec<Metadata>) -> Result<Vec<Project
     Ok(projectors)
 }
 
-#[inline]
 fn get_receivers(items: &[Item]) -> impl Iterator<Item = (&Ident, &Type)> {
     items.iter().filter_map(|item| {
         if let Item::Impl(block) = item
@@ -379,7 +378,6 @@ fn get_receivers(items: &[Item]) -> impl Iterator<Item = (&Ident, &Type)> {
     })
 }
 
-#[inline]
 fn match_id_type_arg(generics: &Generics) -> Option<&Type> {
     for param in &generics.params {
         if let GenericParam::Type(ty) = param {
@@ -421,7 +419,6 @@ fn match_id_bound(bounds: &Punctuated<TypeParamBound, Plus>) -> Option<&Type> {
     None
 }
 
-#[inline]
 fn match_store_field(field: &Field) -> Option<&Type> {
     resolve_store_id_type(&field.ty, &Ident::new("Store", field.span()))
 }

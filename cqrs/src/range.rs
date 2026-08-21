@@ -64,7 +64,6 @@ impl<T> From<RangeToInclusive<T>> for Range<T> {
     }
 }
 
-#[inline]
 fn clone<T: Clone>(bound: Bound<&T>) -> Bound<T> {
     match bound {
         Bound::Excluded(value) => Bound::Excluded(value.clone()),
