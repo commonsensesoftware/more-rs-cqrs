@@ -74,13 +74,13 @@ impl<'a> ChangeSet<'a> {
 
     /// Gets a value indicating whether there are any changes.
     #[inline]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.events.is_empty()
     }
 
     /// Gets the expected [version](Version) associated with the changes.
     #[inline]
-    pub fn expected_version(&self) -> Version {
+    pub const fn expected_version(&self) -> Version {
         self.expected_version
     }
 

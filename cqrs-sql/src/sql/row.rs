@@ -92,7 +92,7 @@ pub struct Iter<'a, ID, M: ?Sized + Sync> {
 }
 
 impl<'a, ID, M: ?Sized + Sync> Iter<'a, ID, M> {
-    pub fn version(&self) -> Version {
+    pub const fn version(&self) -> Version {
         self.version
     }
 }

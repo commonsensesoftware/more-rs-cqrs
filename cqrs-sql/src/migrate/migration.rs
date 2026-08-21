@@ -87,7 +87,7 @@ where
     }
 
     /// Gets the migration version.
-    pub fn version(&self) -> i64 {
+    pub const fn version(&self) -> i64 {
         self.migration.version
     }
 

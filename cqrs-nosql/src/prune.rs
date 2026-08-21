@@ -73,7 +73,7 @@ impl Prune {
         beyond_count || stale
     }
 
-    fn keep(&mut self, count: u8) -> bool {
+    const fn keep(&mut self, count: u8) -> bool {
         if self.kept < count {
             self.kept += 1;
             true

@@ -25,12 +25,12 @@ impl<'a, T: Debug + Send> Filter<'a, T> {
     }
 
     /// Gets the associated identifier, if any.
-    pub fn id(&self) -> Option<&T> {
+    pub const fn id(&self) -> Option<&T> {
         self.id
     }
 
     /// Gets the [date](SystemTime) [range](Range) of recorded events to a predicate.
-    pub fn stored_on(&self) -> &Range<SystemTime> {
+    pub const fn stored_on(&self) -> &Range<SystemTime> {
         &self.stored_on
     }
 }
@@ -60,7 +60,7 @@ impl<'a, T: Debug + Send> FilterBuilder<'a, T> {
     }
 
     /// Builds and returns a new [Filter].
-    pub fn build(self) -> Filter<'a, T> {
+    pub const fn build(self) -> Filter<'a, T> {
         self.0
     }
 }

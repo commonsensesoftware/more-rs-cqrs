@@ -12,15 +12,22 @@ pub trait StoreMigration: Send + Sync {
 }
 
 /// Represents a storage migrator.
-#[derive(Default)]
 pub struct StoreMigrator {
     migrations: Mutex<Vec<Arc<dyn StoreMigration>>>,
 }
 
+impl Default for StoreMigrator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StoreMigrator {
     /// Initializes a new [StoreMigrator].
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new() -> Self {
+        Self {
+            migrations: Mutex::new(Vec::new()),
+        }
     }
 
     /// Adds a new migration.

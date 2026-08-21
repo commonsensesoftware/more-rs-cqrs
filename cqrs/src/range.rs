@@ -12,10 +12,7 @@ pub struct Range<T> {
 
 impl<T> Default for Range<T> {
     fn default() -> Self {
-        Self {
-            from: Bound::Unbounded,
-            to: Bound::Unbounded,
-        }
+        Self::all()
     }
 }
 
@@ -88,8 +85,11 @@ impl<T: Clone> Range<T> {
 
 impl<T> Range<T> {
     /// Initializes a new, unbounded [Range].
-    pub fn all() -> Self {
-        Self::default()
+    pub const fn all() -> Self {
+        Self {
+            from: Bound::Unbounded,
+            to: Bound::Unbounded,
+        }
     }
 
     /// Initializes a new [Range] between two values.
@@ -98,7 +98,7 @@ impl<T> Range<T> {
     ///
     /// * `from` - the inclusive value the range starts from
     /// * `to` - the inclusive value the range goes to
-    pub fn between(from: T, to: T) -> Self {
+    pub const fn between(from: T, to: T) -> Self {
         Self {
             from: Bound::Included(from),
             to: Bound::Included(to),
@@ -110,7 +110,7 @@ impl<T> Range<T> {
     /// # Arguments
     ///
     /// * `from` - the inclusive value the range starts from
-    pub fn from(from: T) -> Self {
+    pub const fn from(from: T) -> Self {
         Self {
             from: Bound::Included(from),
             to: Bound::Unbounded,
@@ -122,7 +122,7 @@ impl<T> Range<T> {
     /// # Arguments
     ///
     /// * `from` - the exclusive value the range starts after
-    pub fn after(from: T) -> Self {
+    pub const fn after(from: T) -> Self {
         Self {
             from: Bound::Excluded(from),
             to: Bound::Unbounded,
@@ -134,7 +134,7 @@ impl<T> Range<T> {
     /// # Arguments
     ///
     /// * `to` - the inclusive value the range ends at
-    pub fn to(to: T) -> Self {
+    pub const fn to(to: T) -> Self {
         Self {
             from: Bound::Unbounded,
             to: Bound::Included(to),
@@ -146,7 +146,7 @@ impl<T> Range<T> {
     /// # Arguments
     ///
     /// * `to` - the exclusive value the range ends before
-    pub fn before(to: T) -> Self {
+    pub const fn before(to: T) -> Self {
         Self {
             from: Bound::Unbounded,
             to: Bound::Excluded(to),
@@ -154,7 +154,7 @@ impl<T> Range<T> {
     }
 
     /// Gets a value indicating whether the range is unbounded.
-    pub fn unbounded(&self) -> bool {
+    pub const fn unbounded(&self) -> bool {
         matches!(self.from, Bound::Unbounded) && matches!(self.to, Bound::Unbounded)
     }
 }
