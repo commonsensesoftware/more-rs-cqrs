@@ -34,7 +34,6 @@ impl<ID> From<&sqlite::SnapshotStore<ID>> for Migration {
     }
 }
 
-#[inline]
 fn db_type<ID>() -> &'static str {
     let name = type_name::<ID>();
 

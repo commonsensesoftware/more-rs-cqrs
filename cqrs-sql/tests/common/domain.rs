@@ -8,12 +8,10 @@ use std::{
 };
 use thiserror::Error;
 
-#[inline]
 fn to_secs(time: SystemTime) -> u64 {
     time.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
 }
 
-#[inline]
 fn from_secs(secs: u64) -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(secs)
 }

@@ -124,13 +124,11 @@ impl<ID> StoreOptions<ID> {
     }
 
     /// Gets the configured store [concurrency](Concurrency) option.
-    #[inline]
     pub fn concurrency(&self) -> Concurrency {
         self.concurrency
     }
 
     /// Gets the configured store [deletion](Delete) option.
-    #[inline]
     pub fn delete(&self) -> Delete {
         self.delete
     }

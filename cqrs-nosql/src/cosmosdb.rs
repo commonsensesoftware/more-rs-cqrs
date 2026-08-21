@@ -94,7 +94,6 @@ impl Container {
 /// An item identifier must be a string that is unique within a logical partition. The value is
 /// padded so that identifiers also sort lexicographically, which makes them easier to read in
 /// tools such as the Data Explorer. Ordering is always applied to the numeric version.
-#[inline]
 pub(crate) fn key(sort_key: u32) -> String {
     format!("{sort_key:010}")
 }

@@ -89,7 +89,6 @@ impl SecureMask {
     /// # Arguments
     ///
     /// * `key` - the key, 1-128 bytes, to initialize the mask with
-    #[inline]
     pub fn new_unchecked<K: AsRef<[u8]>>(key: K) -> Self {
         Self(Rc2::new_with_eff_key_len(key.as_ref(), key.as_ref().len()))
     }
@@ -107,7 +106,6 @@ impl SecureMask {
     }
 
     /// Initializes a new [SecureMask] using an ephemeral key.
-    #[inline]
     pub fn ephemeral() -> Self {
         Self::new_unchecked(Self::new_key())
     }

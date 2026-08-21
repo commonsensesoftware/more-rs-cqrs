@@ -233,7 +233,6 @@ where
     /// In order to use a snapshot store which does not use Azure Cosmos DB, a keyed service must be
     /// registered in the [ServiceCollection] for a [cqrs::snapshot::Store] using the type of
     /// [Aggregate] as the key.
-    #[inline]
     pub fn snapshots(mut self) -> Self {
         let container = self.parent.container;
         let database = self.parent.database.clone();

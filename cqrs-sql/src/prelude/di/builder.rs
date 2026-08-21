@@ -292,7 +292,6 @@ where
     ///
     /// In order to use a snapshot store which does not use SQL, a keyed service must be registered in the
     /// [ServiceCollection] for a [cqrs::snapshot::Store] using the type of [Aggregate] as the key.
-    #[inline]
     pub fn snapshots(mut self) -> Self {
         let name = self.parent.name;
         let url = self.url.clone();
