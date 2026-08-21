@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches-ignore:
+      - 'dependabot/**'
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * 1'
+
+env:
+  CARGO_TERM_COLOR: always
+  # the lint toolchain is pinned so that a new Rust release cannot fail a commit that
+  # previously passed. rustfmt and clippy both change between releases; clippy in
+  # particular adds lints and promotes them to warn-by-default. bump this deliberately
+  # and fix any new findings in the same change
+  RUST_LINT_TOOLCHAIN: '1.97.1'
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      checks: write
+      pull-requests: write
+      security-events: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain nightly
+          source "$HOME/.cargo/env"
+
+      # REF: https://github.com/marketplace/actions/rust-cache
+
+      - name: Cache Cargo Artifacts
+        uses: Swatinem/rust-cache@v2
+
+      # REF: https://crates.io/crates/cargo2junit
+
+      - name: Install Cargo-to-JUnit
+        run: cargo install cargo2junit
+
+      - name: Cargo Build
+        run: cargo build --workspace --all-targets
+
+      # REF: https://github.com/marketplace/actions/docker-setup-docker
+
+      - name: Set Up Docker for Test Containers
+        uses: docker/setup-docker-action@v5
+
+      # note: 'shell: bash' is required so that pipefail is set; without it, a
+      # failing 'cargo test' is masked by the exit code of 'cargo2junit'
+      - name: Cargo Test
+        shell: bash
+        run: |
+          cargo test --package more-cqrs --features di,mem,cbor,json,message-pack,protobuf -- -Z unstable-options --format json --report-time | cargo2junit > target/debug/more-cqrs.xml
+          cargo test --package more-cqrs-sql -- -Z unstable-options --format json --report-time | cargo2junit > target/debug/more-cqrs-sql.xml
+          cargo test --package more-cqrs-nosql -- -Z unstable-options --format json --report-time | cargo2junit > target/debug/more-cqrs-nosql.xml
+
+      # REF: https://github.com/marketplace/actions/publish-test-results
+
+      - name: Publish Test Results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: |
+            target/debug/*.xml
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain "$RUST_LINT_TOOLCHAIN"
+          source "$HOME/.cargo/env"
+
+      - name: Cache Cargo Artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: lint
+
+      # formatting is deterministic for a pinned toolchain, so this gates the build
+      - name: Cargo Format
+        run: cargo fmt --all --check
+
+      # '-D warnings' is safe to gate on here only because the toolchain is pinned above.
+      # a new Rust release cannot introduce a lint that fails a commit which previously
+      # passed; new findings surface when RUST_LINT_TOOLCHAIN is bumped, which is a
+      # deliberate, reviewable change
+      - name: Cargo Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  features:
+    name: Feature Matrix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain nightly
+          source "$HOME/.cargo/env"
+
+      - name: Cache Cargo Artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: features
+
+      # REF: https://github.com/marketplace/actions/install-development-tools
+
+      - name: Install Cargo-Hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+
+      # verifies every crate compiles on its own, with each feature enabled in
+      # isolation and with no features at all. '--no-dev-deps' is the critical
+      # flag: dev-dependencies enable 'di', 'serde/derive', and the storage
+      # provider features, so a plain workspace build silently satisfies feature
+      # gates that a downstream consumer would not. the examples are excluded
+      # because they are not published and define no features of their own.
+      - name: Verify Feature Combinations
+        run: >-
+          cargo hack check
+          --workspace
+          --each-feature
+          --no-dev-deps
+          --exclude basic-examples
+          --exclude dynamodb-examples
+          --exclude postgres-examples
+          --exclude sqlite-examples

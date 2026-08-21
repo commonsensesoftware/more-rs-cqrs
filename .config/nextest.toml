@@ -1,0 +1,25 @@
+# the integration tests for a database served over the network each start a container, which dominates local run time.
+# they are excluded by default and restored by the 'ci' profile, keeping the everyday loop fast while CI verifies E2E.
+#
+#   cargo nextest run              everything except the container tests
+#   cargo nextest run -P ci        everything
+#   cargo nextest run -E 'binary(mysql)'
+#
+# the filter matches test names rather than binaries because a filterset naming a binary that does not exist is an
+# error, and a provider is not present on every branch
+[profile.default]
+default-filter = 'not test(/^verify_(cosmosdb|dynamodb|mssql|mysql|postgres)_/)'
+
+[profile.ci]
+default-filter = 'all()'
+
+# the Azure Cosmos DB emulator is an entire database engine, so more than one at a time starves the
+# machine it runs on. the tests share a single emulator within a process, but nextest runs each test
+# in its own process, so they are also limited to one at a time
+[test-groups]
+cosmosdb = { max-threads = 1 }
+
+[[profile.ci.overrides]]
+filter = 'test(/^verify_cosmosdb_/)'
+test-group = 'cosmosdb'
+slow-timeout = { period = "60s", terminate-after = 10 }
