@@ -37,9 +37,9 @@ pub enum EncodingError {
     #[error("type {} for revision {} has already been registered", (.0).kind(), (.0).revision())]
     DuplicateSchema(Schema),
 
-    /// Indicates an encoding [schema](Schema) has not be registered.
+    /// Indicates an encoding [schema](Schema) is unknown because it is unregistered.
     #[error("type {} for revision {} has not been registered", (.0).kind(), (.0).revision())]
-    Unregistered(Schema),
+    UnknownSchema(Schema),
 
     /// Indicates that an [encoding](Encoding) failed to [Encoding::encode] or [Encoding::decode].
     #[error(transparent)]
@@ -50,7 +50,7 @@ impl PartialEq for EncodingError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::DuplicateSchema(l0), Self::DuplicateSchema(r0)) => l0 == r0,
-            (Self::Unregistered(l0), Self::Unregistered(r0)) => l0 == r0,
+            (Self::UnknownSchema(l0), Self::UnknownSchema(r0)) => l0 == r0,
             _ => false,
         }
     }
