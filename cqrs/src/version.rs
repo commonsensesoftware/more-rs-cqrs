@@ -36,7 +36,7 @@ impl Version {
     /// # Arguments
     ///
     /// * `value` - the implementation-specific, encoded value
-    #[inline(always)]
+    #[inline]
     pub const fn new(value: u64) -> Self {
         Self(value)
     }
