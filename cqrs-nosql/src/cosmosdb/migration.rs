@@ -10,8 +10,8 @@ use std::error::Error;
 // and makes them eligible for a transactional batch
 const PARTITION_KEY: &str = "/aggregateId";
 
-// REMARKS: a migration is idempotent. a database or container that already exists reports a conflict, which means the
-// migration has already been run
+// a migration is idempotent. a database or container that already exists reports a conflict, which means the migration
+// has already been run
 async fn migrate(client: &CosmosClient, database: &str, container: &str) -> Result<(), Box<dyn Error + 'static>> {
     if let Err(error) = client.create_database(database, None).await
         && !error.status().is_conflict()

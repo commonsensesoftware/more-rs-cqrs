@@ -126,9 +126,9 @@ where
                         return Err(error);
                     }
 
-                    // REMARKS: a conflict is not proof that another writer won the version. a client retries a request
-                    // whose response it never observed, so the conflict can be this same write echoing back the event
-                    // the original request already committed. the stored event settles it: if it is the event being
+                    // a conflict is not proof that another writer won the version. a client retries a request whose
+                    // response it never observed, so the conflict can be this same write echoing back the event the
+                    // original request already committed. the stored event settles it: if it is the event being
                     // written, the append is already durable and retrying it would append the event a second time
                     if self.written(id, version, &*events[0]).await? {
                         // events are written atomically, so the last version is durable whenever the first one is

@@ -90,3 +90,42 @@ async fn repository_should_get_aggregate_by_id_using_di() -> TestResult<Reposito
     assert_eq!(account.balance, 75.0);
     Ok(())
 }
+
+#[tokio::test]
+async fn store_should_load_any_version_of_versionless_type() -> TestResult<RepositoryError<String>> {
+    use cqrs::event::PredicateBuilder;
+    use cqrs::message::{Encoded, Type};
+    use futures::StreamExt;
+
+    // arrange
+    let options = StoreOptions::builder()
+        .clock(VirtualClock::new())
+        .transcoder(events())
+        .build();
+    let store = Arc::new(EventStore::<String>::new(options));
+    let repository: Repository<Account> = (store.clone() as Arc<dyn Store<String>>).into();
+    let mut account = Account::open("42");
+
+    account.credit(25.0);
+    account.debit(10.0);
+    account.credit(5.0);
+    repository.save(&mut account).await?;
+
+    let id = "42".to_string();
+    let predicate = PredicateBuilder::new(Some(&id))
+        .add_type(Type::any(common::domain::Credited::schema().kind()))
+        .build();
+
+    // act
+    let mut events = store.load(Some(&predicate)).await;
+    let mut count = 0usize;
+
+    while let Some(event) = events.next().await {
+        event?;
+        count += 1;
+    }
+
+    // assert
+    assert_eq!(count, 2);
+    Ok(())
+}

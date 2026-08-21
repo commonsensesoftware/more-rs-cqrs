@@ -8,6 +8,16 @@ use cqrs::{
 };
 use serde::{Deserialize, Serialize};
 
+// revision 2 added a field the type is able to default, so one type decodes both revisions
+#[event(kind = "urn:sales:order:created", version = 2)]
+#[derive(Default, Debug, Deserialize, Serialize, PartialEq)]
+pub struct Created {
+    pub id: String,
+
+    #[serde(default)]
+    pub name: String,
+}
+
 // an event whose kind is pinned so that it survives moving or renaming the type
 #[event(kind = "urn:sales:order:placed", version = 2)]
 #[derive(Default, Debug, Deserialize, Serialize, PartialEq)]
@@ -188,7 +198,7 @@ fn encoding_version_should_use_pinned_kind() {
     // arrange
     let mut transcoder = cqrs::event::transcoder();
 
-    transcoder.register(Json::<Placed>::version(2)).unwrap();
+    transcoder.register(Json::<Placed>::version::<2>()).unwrap();
 
     let expected = Placed { id: "42".into() };
 
@@ -198,7 +208,7 @@ fn encoding_version_should_use_pinned_kind() {
     let actual = event.as_any().downcast_ref::<Placed>().unwrap();
 
     // assert
-    assert_eq!(Placed::schema(), Schema::new("urn:sales:order:placed", 2));
+    assert_eq!(Placed::schema(), Schema::version::<2>("urn:sales:order:placed"));
     assert_eq!(*actual, expected);
 }
 
@@ -207,7 +217,7 @@ fn encoding_with_schema_should_decode_previous_kind() {
     // arrange
     // the events were stored before the type was moved, so the current transcoder
     // cannot decode them; a transcoder that maps the old kind onto the type can
-    let old = Schema::new("transcoder::before::Renamed", 1);
+    let old = Schema::version::<1>("transcoder::before::Renamed");
     let mut previous = cqrs::event::transcoder();
 
     previous.register(Json::<Renamed>::with_schema(old.clone())).unwrap();
@@ -273,4 +283,67 @@ fn transcoder_merge_should_not_modify_on_duplicate_schema() {
         transcoder.encode(&Placed::default()).unwrap_err(),
         EncodingError::Unregistered(Placed::schema())
     );
+}
+
+#[test]
+fn encoding_version_should_decode_previous_revision() {
+    // arrange
+    let stored = br#"{"id":"42"}"#;
+    let previous = Schema::version::<1>("urn:sales:order:created");
+    let mut transcoder = cqrs::event::transcoder();
+
+    transcoder.register(Json::<Created>::new()).unwrap();
+    transcoder.register(Json::<Created>::version::<1>()).unwrap();
+
+    // act
+    let event = transcoder.decode(&previous, stored).unwrap();
+    let actual = event.as_any().downcast_ref::<Created>().unwrap();
+
+    // assert
+    assert_eq!(
+        *actual,
+        Created {
+            id: "42".into(),
+            name: String::new(),
+        }
+    );
+}
+
+#[test]
+fn transcoder_should_not_decode_previous_revision_that_is_unregistered() {
+    // arrange
+    let stored = br#"{"id":"42"}"#;
+    let previous = Schema::version::<1>("urn:sales:order:created");
+    let mut transcoder = cqrs::event::transcoder();
+
+    transcoder.register(Json::<Created>::new()).unwrap();
+
+    // act
+    let result = transcoder.decode(&previous, stored);
+
+    // assert
+    assert_eq!(result.err(), Some(EncodingError::Unregistered(previous)));
+}
+
+#[test]
+fn encoding_version_should_not_change_how_a_message_is_encoded() {
+    // arrange
+    let expected = Created {
+        id: "42".into(),
+        name: "Savings".into(),
+    };
+    let mut transcoder = cqrs::event::transcoder();
+
+    transcoder.register(Json::<Created>::new()).unwrap();
+    transcoder.register(Json::<Created>::version::<1>()).unwrap();
+
+    // act
+    let encoded = transcoder.encode(&expected).unwrap();
+
+    // assert
+    assert_eq!(Created::schema(), Schema::version::<2>("urn:sales:order:created"));
+
+    let event = transcoder.decode(&Created::schema(), &encoded).unwrap();
+
+    assert_eq!(*event.as_any().downcast_ref::<Created>().unwrap(), expected);
 }

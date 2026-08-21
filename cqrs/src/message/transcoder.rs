@@ -107,7 +107,7 @@ impl<T: ?Sized + Message> Transcoder<T> {
             .min_by(|left, right| {
                 left.kind()
                     .cmp(right.kind())
-                    .then_with(|| left.version().cmp(&right.version()))
+                    .then_with(|| left.revision().cmp(&right.revision()))
             })
         {
             return Err(EncodingError::DuplicateSchema(schema.clone()));

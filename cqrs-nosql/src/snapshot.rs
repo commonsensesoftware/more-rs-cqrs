@@ -104,7 +104,7 @@ mod test {
     use uuid::Uuid;
 
     fn descriptor(version: Version) -> Descriptor {
-        Descriptor::new(Schema::new("statement", 1), version, Vec::new())
+        Descriptor::new(Schema::version::<1>("statement"), version, Vec::new())
     }
 
     #[test]

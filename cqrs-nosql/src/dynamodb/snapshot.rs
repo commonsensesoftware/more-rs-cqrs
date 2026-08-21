@@ -11,7 +11,7 @@ use cqrs::{
     message::{Descriptor, Saved, Schema},
     snapshot::{Predicate, Retention, Snapshot, SnapshotError, Store, StoreOptions},
 };
-use std::{fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, marker::PhantomData, num::NonZeroU8};
 
 /// Represents an Amazon DynamoDB [snapshot store](Store).
 pub struct SnapshotStore<T> {
@@ -106,9 +106,11 @@ where
 
         if let Some(item) = items.next().await {
             let attributes = item.box_err()?;
+            let kind = coerce::<String>("kind", &attributes, AttributeValue::as_s);
+            let revision = coerce::<u8>("revision", &attributes, AttributeValue::as_n);
             let schema = Schema::new(
-                coerce::<String>("kind", &attributes, AttributeValue::as_s),
-                coerce("revision", &attributes, AttributeValue::as_n),
+                &kind,
+                NonZeroU8::new(revision).ok_or_else(|| SnapshotError::InvalidSchema(kind.clone()))?,
             );
             let mut version = new_version(coerce("version", &attributes, AttributeValue::as_n), 0);
             let empty = Blob::default();
@@ -152,7 +154,7 @@ where
             .item("version", N(version.number().to_string()))
             .item("takenOn", N(stored_on.to_string()))
             .item("kind", S(schema.kind().into()))
-            .item("revision", N(schema.version().to_string()))
+            .item("revision", N(schema.revision().to_string()))
             .item("content", B(Blob::new(content)));
 
         request.send().await.box_err()?;

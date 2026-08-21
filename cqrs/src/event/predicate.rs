@@ -1,7 +1,8 @@
-use crate::message::Schema;
+use crate::message::Type;
 use crate::{Range, Version};
 use std::{
     fmt::Debug,
+    num::NonZeroU8,
     ops::{Bound, Bound::Unbounded},
     time::SystemTime,
 };
@@ -34,7 +35,7 @@ pub struct Predicate<'a, T: Debug + Send = Uuid> {
     pub version: Bound<Version>,
 
     /// Gets or sets the event types to apply to the predicate.
-    pub types: Vec<Schema>,
+    pub types: Vec<Type>,
 
     /// Gets or sets the [date](SystemTime) [range](Range) to apply to a predicate, if any.
     pub stored_on: Range<SystemTime>,
@@ -94,13 +95,13 @@ impl<'a, T: Debug + Send> PredicateBuilder<'a, T> {
     ///
     /// # Arguments
     ///
-    /// * `value` - the event type [schema](Schema)
+    /// * `value` - the event [type](Type), which a [schema](crate::message::Schema) converts into
     ///
     /// # Remarks
     ///
-    /// Use [Schema::versionless] to match any version of a [schema](Schema).
-    pub fn add_type(mut self, value: Schema) -> Self {
-        self.0.types.push(value);
+    /// Use [Type::any] to apply a predicate to every version of a type.
+    pub fn add_type<V: Into<Type>>(mut self, value: V) -> Self {
+        self.0.types.push(value.into());
         self
     }
 
@@ -159,4 +160,72 @@ impl<'a, T: Debug + Send> From<PredicateBuilder<'a, T>> for Predicate<'a, T> {
     fn from(value: PredicateBuilder<'a, T>) -> Self {
         value.build()
     }
+}
+
+/// Defines the behavior used to translate the message types of a [predicate](Predicate) into a store-specific filter.
+///
+/// # Remarks
+///
+/// A store implements this trait and drives it with [filter_types], which decides the shape of the filter and, in
+/// particular, whether a message type constrains the revision. A [type](Type) that applies to every version must not
+/// constrain the revision at all; getting that wrong silently matches nothing instead of everything, so the decision is
+/// made in one place for every store.
+pub trait TypeFilter {
+    /// The error that can occur while a condition is added.
+    type Error;
+
+    /// Begins the filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `many` - indicates whether the filter contains more than one condition
+    fn begin(&mut self, many: bool);
+
+    /// Adds the condition for a single message type.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - the zero-based index of the condition
+    /// * `kind` - the message type the condition applies to
+    /// * `revision` - the message revision the condition applies to, if any. [None] indicates the
+    ///   condition applies to every version and must not constrain the revision
+    fn condition(&mut self, index: usize, kind: &str, revision: Option<NonZeroU8>) -> Result<(), Self::Error>;
+
+    /// Adds the separator between two conditions.
+    fn or(&mut self);
+
+    /// Ends the filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `many` - indicates whether the filter contained more than one condition
+    fn end(&mut self, many: bool);
+}
+
+/// Translates the message types of a [predicate](Predicate) into a store-specific filter.
+///
+/// # Arguments
+///
+/// * `types` - the message [types](Type) to translate
+/// * `filter` - the [filter](TypeFilter) the translation is applied to
+///
+/// # Remarks
+///
+/// The [filter](TypeFilter) is not visited at all when there are no types.
+pub fn filter_types<F: TypeFilter + ?Sized>(types: &[Type], filter: &mut F) -> Result<(), F::Error> {
+    let Some((first, rest)) = types.split_first() else {
+        return Ok(());
+    };
+    let many = !rest.is_empty();
+
+    filter.begin(many);
+    filter.condition(0, first.kind(), first.revision())?;
+
+    for (index, type_) in rest.iter().enumerate() {
+        filter.or();
+        filter.condition(index + 1, type_.kind(), type_.revision())?;
+    }
+
+    filter.end(many);
+    Ok(())
 }

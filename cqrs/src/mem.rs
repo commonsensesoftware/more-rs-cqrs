@@ -260,7 +260,7 @@ fn less_than_or_equal(bound: &Bound<SystemTime>, now: &SystemTime) -> bool {
 
 fn by<T: Debug + Send>(row: &Row, now: SystemTime, option: Option<&Predicate<T>>) -> bool {
     if let Some(predicate) = option {
-        if predicate.types.is_empty() || predicate.types.contains(&row.schema) {
+        if predicate.types.is_empty() || predicate.types.iter().any(|type_| type_.matches(&row.schema)) {
             greater_than_or_equal(&predicate.stored_on.from, &now)
                 && less_than_or_equal(&predicate.stored_on.to, &now)
         } else {

@@ -12,7 +12,7 @@ use cqrs::{
 };
 use futures::stream;
 use sqlx::{ColumnIndex, Connection, Database, Decode, Encode, Executor, FromRow, IntoArguments, Pool, Row, Type};
-use std::{error::Error, fmt::Debug, ops::Bound, sync::Arc, time::SystemTime};
+use std::{error::Error, fmt::Debug, num::NonZeroU8, ops::Bound, sync::Arc, time::SystemTime};
 
 /// Represents a SQL [event store](Store).
 pub struct SqlStore<ID, DB: Database> {
@@ -111,9 +111,11 @@ where
 
             for await result in rows {
                 let row = result.box_err()?;
+                let kind = row.get::<&str, _>(TYPE);
+                let revision = row.get::<i16, _>(REVISION) as u8;
                 let schema = Schema::new(
-                    row.get::<&str, _>(TYPE),
-                    row.get::<i16, _>(REVISION) as u8,
+                    kind,
+                    NonZeroU8::new(revision).ok_or_else(|| StoreError::InvalidSchema(kind.into()))?,
                 );
                 let content = row.get::<&[u8], _>(CONTENT);
                 let event = options.transcoder().decode(&schema, content)?;

@@ -1,10 +1,51 @@
 use crate::sql::{self, Provider, greater_than, less_than};
 use cqrs::{
     Range,
-    event::{Predicate, StoreError},
+    event::{Predicate, StoreError, filter_types},
 };
 use sqlx::{Database, Encode, Executor, FromRow, IntoArguments, QueryBuilder, Transaction, Type};
-use std::{error::Error, fmt::Debug, ops::Bound, time::SystemTime};
+use std::{
+    convert::Infallible, error::Error, fmt::Debug, marker::PhantomData, num::NonZeroU8, ops::Bound, time::SystemTime,
+};
+
+/// Translates the message types of a predicate into a SQL filter.
+struct TypeFilter<'a, 'b, DB: Database>(&'a mut QueryBuilder<DB>, PhantomData<&'b ()>);
+
+impl<'a, 'b, DB> cqrs::event::TypeFilter for TypeFilter<'a, 'b, DB>
+where
+    DB: Database,
+    i16: Encode<'b, DB> + Type<DB>,
+    String: Encode<'b, DB> + Type<DB>,
+{
+    type Error = Infallible;
+
+    fn begin(&mut self, many: bool) {
+        if many {
+            self.0.push('(');
+        }
+    }
+
+    fn condition(&mut self, _index: usize, kind: &str, revision: Option<NonZeroU8>) -> Result<(), Self::Error> {
+        self.0.push("(type = ").push_bind(kind.to_string());
+
+        if let Some(revision) = revision {
+            self.0.push(" AND revision = ").push_bind(revision.get() as i16);
+        }
+
+        self.0.push(')');
+        Ok(())
+    }
+
+    fn or(&mut self) {
+        self.0.push(" OR ");
+    }
+
+    fn end(&mut self, many: bool) {
+        if many {
+            self.0.push(')');
+        }
+    }
+}
 
 #[inline]
 fn and_stored_on<'a, D>(builder: &mut QueryBuilder<D>, (time, op): (SystemTime, &str))
@@ -108,39 +149,13 @@ where
             and_stored_on(&mut select, upper);
         }
 
-        let mut schemas = predicate.types.iter();
-
-        if let Some(schema) = schemas.next() {
+        if !predicate.types.is_empty() {
             add_where(&mut select, &mut added);
-
-            let many = predicate.types.len() > 1;
-
-            if many {
-                select.push('(');
-            }
-
-            select.push("(type = ").push_bind(schema.kind().to_string());
-
-            if schema.version() > 0 {
-                select.push(" AND revision = ").push_bind(schema.version() as i16);
-            }
-
-            select.push(")");
-
-            for schema in schemas {
-                select.push(" OR (type = ").push_bind(schema.kind().to_string());
-
-                if schema.version() > 0 {
-                    select.push(" AND revision = ").push_bind(schema.version() as i16);
-                }
-
-                select.push(")");
-            }
-
-            if many {
-                select.push(')');
-            }
         }
+
+        let mut filter = TypeFilter::<'_, 'a, DB>(&mut select, PhantomData);
+
+        filter_types(&predicate.types, &mut filter).unwrap();
     }
 
     select.push(';');
@@ -263,5 +278,67 @@ where
         Ok(())
     } else {
         Err(StoreError::Deleted(previous.id.clone()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cqrs::event::PredicateBuilder;
+    use cqrs::message::{Schema, Type};
+    use sqlx::Sqlite;
+    use uuid::Uuid;
+
+    fn sql(predicate: &Predicate<'_, Uuid>) -> String {
+        select::<Uuid, Sqlite>(sql::Ident::unqualified("events"), Some(predicate), Bound::Unbounded)
+            .sql()
+            .as_str()
+            .into()
+    }
+
+    #[test]
+    fn select_should_constrain_revision_for_versioned_type() {
+        // arrange
+        let predicate = PredicateBuilder::<Uuid>::new(None)
+            .add_type(Schema::version::<1>("created"))
+            .build();
+
+        // act
+        let sql = sql(&predicate);
+
+        // assert
+        assert!(sql.ends_with(" WHERE (type = ? AND revision = ?);"), "{sql}");
+    }
+
+    #[test]
+    fn select_should_not_constrain_revision_for_versionless_type() {
+        // arrange
+        let predicate = PredicateBuilder::<Uuid>::new(None)
+            .add_type(Type::any("created"))
+            .build();
+
+        // act
+        let sql = sql(&predicate);
+
+        // assert
+        assert!(sql.ends_with(" WHERE (type = ?);"), "{sql}");
+    }
+
+    #[test]
+    fn select_should_mix_versionless_and_versioned_types() {
+        // arrange
+        let predicate = PredicateBuilder::<Uuid>::new(None)
+            .add_type(Type::any("created"))
+            .add_type(Schema::version::<2>("shipped"))
+            .build();
+
+        // act
+        let sql = sql(&predicate);
+
+        // assert
+        assert!(
+            sql.ends_with(" WHERE ((type = ?) OR (type = ? AND revision = ?));"),
+            "{sql}"
+        );
     }
 }

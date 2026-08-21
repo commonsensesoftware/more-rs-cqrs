@@ -6,7 +6,7 @@ mod store;
 
 pub use delete::Delete;
 pub use message::Event;
-pub use predicate::{LoadOptions, Predicate, PredicateBuilder};
+pub use predicate::{LoadOptions, Predicate, PredicateBuilder, TypeFilter, filter_types};
 pub use receiver::Receiver;
 pub use store::{EventStream, IdStream, Store, StoreError, StoreOptions};
 
