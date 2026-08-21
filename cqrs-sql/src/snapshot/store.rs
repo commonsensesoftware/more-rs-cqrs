@@ -11,7 +11,7 @@ use cqrs::{
 };
 use futures::StreamExt;
 use sqlx::{ColumnIndex, Connection, Database, Decode, Encode, Executor, IntoArguments, Pool, Row, Type};
-use std::{fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, marker::PhantomData, num::NonZeroU8};
 
 /// Represents a SQL [snapshot store](Store).
 pub struct SqlStore<ID, DB: Database> {
@@ -88,7 +88,12 @@ where
 
         if let Some(result) = rows.next().await {
             let row = result.box_err()?;
-            let schema = Schema::new(row.get::<&str, _>(TYPE), row.get::<i16, _>(REVISION) as u8);
+            let kind = row.get::<&str, _>(TYPE);
+            let revision = row.get::<i16, _>(REVISION) as u8;
+            let schema = Schema::new(
+                kind,
+                NonZeroU8::new(revision).ok_or_else(|| SnapshotError::InvalidSchema(kind.into()))?,
+            );
             let mut version = new_version(row.get::<i32, _>(VERSION), 0);
             let content = row.get::<&[u8], _>(CONTENT);
 
@@ -124,7 +129,7 @@ where
             sequence: version.sequence(),
             stored_on,
             kind: schema.kind().into(),
-            revision: schema.version() as i16,
+            revision: schema.revision().get() as i16,
             content,
             correlation_id: None,
         };

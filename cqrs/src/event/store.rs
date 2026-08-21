@@ -197,6 +197,15 @@ pub enum StoreError<T: Debug + Send> {
     #[error("the requested operation is unsupported")]
     Unsupported,
 
+    /// Indicates a stored message [schema](crate::message::Schema) is invalid.
+    ///
+    /// # Remarks
+    ///
+    /// A message revision is always greater than `0`. A stored revision of `0` indicates the backing store has been
+    /// modified outside of the library or that the attribute is missing.
+    #[error("the stored revision for message type {0} is invalid")]
+    InvalidSchema(String),
+
     /// Indicates an unknown store [error](Error).
     #[error(transparent)]
     Unknown(#[from] Box<dyn Error + Send>),
@@ -209,6 +218,7 @@ impl<T: Debug + PartialEq + Send> PartialEq for StoreError<T> {
             (Self::Deleted(l0), Self::Deleted(r0)) => l0 == r0,
             (Self::InvalidEncoding(l0), Self::InvalidEncoding(r0)) => l0 == r0,
             (Self::BatchTooLarge(l0), Self::BatchTooLarge(r0)) => l0 == r0,
+            (Self::InvalidSchema(l0), Self::InvalidSchema(r0)) => l0 == r0,
             (Self::Unknown(_), Self::Unknown(_)) => false,
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }

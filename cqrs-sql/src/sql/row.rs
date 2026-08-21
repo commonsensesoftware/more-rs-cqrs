@@ -124,7 +124,7 @@ where
                 sequence: self.version.sequence(),
                 stored_on: self.stored_on,
                 kind: schema.kind().into(),
-                revision: schema.version() as i16,
+                revision: schema.revision().get() as i16,
                 content,
                 correlation_id: event.correlation_id().map(Into::into),
             }))

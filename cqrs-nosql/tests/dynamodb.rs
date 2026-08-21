@@ -45,11 +45,10 @@ impl Local {
         Client::new(&config)
     }
 
-    // REMARKS: the ready condition of the image is a log message the server writes as it starts,
-    // followed by a fixed delay. the delay is a guess, and it is only long enough while nothing else
-    // is competing for the machine. nextest runs each test in its own process, so several containers
-    // start at once and the server is not listening yet when the delay expires, which surfaces as an
-    // incomplete message. wait for the server to actually answer instead
+    // the ready condition of the image is a log message the server writes as it starts, followed by a fixed delay. the
+    // delay is a guess, and it is only long enough while nothing else is competing for the machine. nextest runs each
+    // test in its own process, so several containers start at once and the server is not listening yet when the delay
+    // expires, which surfaces as an incomplete message. wait for the server to actually answer instead
     async fn wait_until_ready(&self) -> TestResult {
         const ATTEMPTS: u8 = 60;
 

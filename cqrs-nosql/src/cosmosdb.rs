@@ -28,9 +28,8 @@ cfg_select! {
     _ => {}
 }
 
-// REMARKS: a transactional batch is limited to 100 operations, all of which must target the
-// same partition key. an aggregate is a partition, which makes a batch the natural unit of
-// atomicity for the events appended by a single command
+// a transactional batch is limited to 100 operations, all of which must target the same partition key. an aggregate is
+// a partition, which makes a batch the natural unit of atomicity for the events appended by a single command
 pub(crate) const MAX_BATCH_SIZE: usize = 100;
 
 pub(crate) const CONFLICT: u16 = 409;
@@ -166,9 +165,9 @@ struct Key {
     taken_on: u64,
 }
 
-// REMARKS: there is no efficient way to know how many items there are and delete them in an atomic
-// manner. a transaction only allows 100 items, but there could be more. this operation is idempotent.
-// if a failure occurs, it is transient (expect bugs) and can safely be retried until it succeeds.
+// there is no efficient way to know how many items there are and delete them in an atomic manner. a transaction only
+// allows 100 items, but there could be more. this operation is idempotent. if a failure occurs, it is transient
+// (expect bugs) and can safely be retried until it succeeds.
 async fn delete_all(
     container: &Container,
     id: String,

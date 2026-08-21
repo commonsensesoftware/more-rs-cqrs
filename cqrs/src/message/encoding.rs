@@ -34,11 +34,11 @@ pub trait Encoding<T: ?Sized + Sync>: Send + Sync {
 #[derive(Error, Debug)]
 pub enum EncodingError {
     /// Indicates a [schema](Schema) for an encoding has already been registered.
-    #[error("type {} for revision {} has already been registered", (.0).kind(), (.0).version())]
+    #[error("type {} for revision {} has already been registered", (.0).kind(), (.0).revision())]
     DuplicateSchema(Schema),
 
     /// Indicates an encoding [schema](Schema) has not be registered.
-    #[error("type {} for revision {} has not been registered", (.0).kind(), (.0).version())]
+    #[error("type {} for revision {} has not been registered", (.0).kind(), (.0).revision())]
     Unregistered(Schema),
 
     /// Indicates that an [encoding](Encoding) failed to [Encoding::encode] or [Encoding::decode].

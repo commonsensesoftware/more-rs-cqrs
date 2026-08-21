@@ -124,6 +124,15 @@ pub enum SnapshotError {
     #[error("the specified version is invalid")]
     InvalidVersion,
 
+    /// Indicates a stored message [schema](crate::message::Schema) is invalid.
+    ///
+    /// # Remarks
+    ///
+    /// A message revision is always greater than `0`. A stored revision of `0` indicates the backing store has been
+    /// modified outside of the library or that the column is missing.
+    #[error("the stored revision for message type {0} is invalid")]
+    InvalidSchema(String),
+
     /// Indicates an unknown store [error](Error).
     #[error(transparent)]
     Unknown(#[from] Box<dyn Error + Send>),
@@ -134,6 +143,7 @@ impl<T: Debug + Send> From<SnapshotError> for StoreError<T> {
         match value {
             SnapshotError::InvalidEncoding(error) => Self::InvalidEncoding(error),
             SnapshotError::InvalidVersion => Self::InvalidVersion,
+            SnapshotError::InvalidSchema(kind) => Self::InvalidSchema(kind),
             SnapshotError::Unknown(error) => Self::Unknown(error),
         }
     }

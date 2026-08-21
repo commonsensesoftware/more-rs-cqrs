@@ -9,6 +9,6 @@ pub trait Encoded {
     ///
     /// The default implementation uses the fully-qualified name of the associated type.
     fn schema() -> Schema {
-        Schema::initial(type_name::<Self>())
+        Schema::version::<1>(type_name::<Self>())
     }
 }

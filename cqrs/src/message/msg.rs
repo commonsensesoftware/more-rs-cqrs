@@ -5,7 +5,7 @@ use std::any::type_name;
 pub trait Message: Send + Sync {
     /// Get the message [schema](Schema).
     fn schema(&self) -> Schema {
-        Schema::new(type_name::<Self>(), 1)
+        Schema::version::<1>(type_name::<Self>())
     }
 
     /// Gets the associated message correlation identifier, if any.

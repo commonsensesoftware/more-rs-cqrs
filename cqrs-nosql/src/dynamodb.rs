@@ -35,7 +35,7 @@ cfg_select! {
     _ => {}
 }
 
-// REMARKS: a transaction is limited to 100 items, which is the number of events that can be saved atomically
+// a transaction is limited to 100 items, which is the number of events that can be saved atomically
 // REF: https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html
 pub(crate) const MAX_TRANSACTION_SIZE: usize = 100;
 
@@ -57,9 +57,9 @@ fn coerce<T: FromStr + Default>(
     T::default()
 }
 
-// REMARKS: there is no efficient way to know how many items there are and delete them in an atomic manner. a
-// transaction only allows 100 items, but there could be more. this operation is idempotent. if a failure occurs, it is
-// transient (expect bugs) and can safely be retried until it succeeds.
+// there is no efficient way to know how many items there are and delete them in an atomic manner. a transaction only
+// allows 100 items, but there could be more. this operation is idempotent. if a failure occurs, it is transient
+// (expect bugs) and can safely be retried until it succeeds.
 async fn delete_all(
     client: &Client,
     table: &str,

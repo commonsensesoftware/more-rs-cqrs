@@ -12,12 +12,12 @@ use async_trait::async_trait;
 use azure_data_cosmos::{CosmosError, Query, feed::FeedScope, models::TransactionalBatch};
 use cqrs::{
     Clock, Range, Version,
-    event::{Event, EventStream, IdStream, Predicate, Store, StoreError, StoreOptions},
+    event::{Event, EventStream, IdStream, Predicate, Store, StoreError, StoreOptions, filter_types},
     message::{Saved, Schema},
 };
 use futures::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fmt::Debug, ops::Bound, str::FromStr, sync::Arc, time::SystemTime};
+use std::{error::Error, fmt::Debug, num::NonZeroU8, ops::Bound, str::FromStr, sync::Arc, time::SystemTime};
 
 /// Represents the item of a stored [event](Event).
 #[derive(Deserialize, Serialize)]
@@ -83,37 +83,20 @@ where
         query = query.with_parameter("@to", crate::to_secs(to))?;
     }
 
-    let mut schemas = predicate.types.iter().enumerate();
-
-    if let Some((i, schema)) = schemas.next() {
-        let many = predicate.types.len() > 1;
-
+    if !predicate.types.is_empty() {
         text.push_str(and);
-
-        if many {
-            text.push('(');
-        }
-
-        text.push_str(&condition(i));
-        query = query
-            .with_parameter(format!("@kind{i}"), schema.kind())?
-            .with_parameter(format!("@revision{i}"), schema.version())?;
-
-        for (i, schema) in schemas {
-            text.push_str(" OR ");
-            text.push_str(&condition(i));
-            query = query
-                .with_parameter(format!("@kind{i}"), schema.kind())?
-                .with_parameter(format!("@revision{i}"), schema.version())?;
-        }
-
-        if many {
-            text.push(')');
-        }
     }
 
-    // REMARKS: ORDER BY is unsupported in a cross-partition query. an aggregate is a partition, so events can only be
-    // ordered by version when the query is scoped to a single aggregate
+    let mut filter = TypeFilter {
+        text: &mut text,
+        query: Some(query),
+    };
+
+    filter_types(&predicate.types, &mut filter)?;
+    query = filter.query.unwrap();
+
+    // ORDER BY is unsupported in a cross-partition query. an aggregate is a partition, so events can only be ordered by
+    // version when the query is scoped to a single aggregate
     if let Some(id) = predicate.id {
         text.push_str(" ORDER BY c.version");
         Ok((query.with_text(text), FeedScope::partition(id.to_string())))
@@ -122,9 +105,50 @@ where
     }
 }
 
-#[inline]
-fn condition(i: usize) -> String {
-    format!("(c.kind = @kind{i} AND c.revision = @revision{i})")
+/// Translates the message types of a predicate into a Cosmos DB filter.
+struct TypeFilter<'a> {
+    text: &'a mut String,
+
+    // the query is built by value, so it is taken and replaced as each parameter is added
+    query: Option<Query>,
+}
+
+impl<'a> cqrs::event::TypeFilter for TypeFilter<'a> {
+    type Error = CosmosError;
+
+    fn begin(&mut self, many: bool) {
+        if many {
+            self.text.push('(');
+        }
+    }
+
+    fn condition(&mut self, index: usize, kind: &str, revision: Option<NonZeroU8>) -> Result<(), Self::Error> {
+        let mut query = self.query.take().unwrap();
+
+        self.text.push_str("(c.kind = @kind");
+        self.text.push_str(&index.to_string());
+        query = query.with_parameter(format!("@kind{index}"), kind)?;
+
+        if let Some(revision) = revision {
+            self.text.push_str(" AND c.revision = @revision");
+            self.text.push_str(&index.to_string());
+            query = query.with_parameter(format!("@revision{index}"), revision.get())?;
+        }
+
+        self.text.push(')');
+        self.query = Some(query);
+        Ok(())
+    }
+
+    fn or(&mut self) {
+        self.text.push_str(" OR ");
+    }
+
+    fn end(&mut self, many: bool) {
+        if many {
+            self.text.push(')');
+        }
+    }
 }
 
 /// Represents an Azure Cosmos DB [event store](Store).
@@ -170,7 +194,7 @@ where
             version: version.sort_key(),
             stored_on,
             kind: schema.kind().into(),
-            revision: schema.version(),
+            revision: schema.revision().get(),
             correlation_id: event.correlation_id().map(Into::into),
             content: super::encode(&content),
         })
@@ -381,7 +405,9 @@ where
             while let Some(item) = items.next().await {
                 let document = item.box_err()?;
                 let mut version = from_sort_key(document.version);
-                let schema = Schema::new(document.kind, document.revision);
+                let revision = NonZeroU8::new(document.revision)
+                    .ok_or_else(|| StoreError::InvalidSchema(document.kind.clone()))?;
+                let schema = Schema::new(document.kind, revision);
                 let content = super::decode(&document.content)?;
                 let event = options.transcoder().decode(&schema, &content)?;
 
@@ -421,6 +447,7 @@ where
 mod test {
     use super::*;
     use cqrs::event::PredicateBuilder;
+    use cqrs::message::Type;
     use std::ops::Bound::{Excluded, Included, Unbounded};
     use std::time::{Duration, UNIX_EPOCH};
     use uuid::Uuid;
@@ -485,14 +512,61 @@ mod test {
     }
 
     #[test]
+    fn select_should_not_constrain_revision_for_versionless_type() {
+        // arrange
+        let id = Uuid::nil();
+        let predicate = PredicateBuilder::new(Some(&id)).add_type(Type::any("created")).build();
+
+        // act
+        let (query, _) = select(Some(&predicate), Unbounded).unwrap();
+
+        // assert
+        assert_eq!(
+            text(&query),
+            "SELECT * FROM c WHERE (c.kind = @kind0) ORDER BY c.version"
+        );
+        assert_eq!(parameters(&query), vec![("@kind0".into(), "created".into())]);
+    }
+
+    #[test]
+    fn select_should_mix_versionless_and_versioned_types() {
+        // arrange
+        let id = Uuid::nil();
+        let predicate = PredicateBuilder::new(Some(&id))
+            .add_type(Type::any("created"))
+            .add_type(Schema::version::<2>("shipped"))
+            .build();
+
+        // act
+        let (query, _) = select(Some(&predicate), Unbounded).unwrap();
+
+        // assert
+        assert_eq!(
+            text(&query),
+            "SELECT * FROM c \
+             WHERE ((c.kind = @kind0) \
+             OR (c.kind = @kind1 AND c.revision = @revision1)) \
+             ORDER BY c.version"
+        );
+        assert_eq!(
+            parameters(&query),
+            vec![
+                ("@kind0".into(), "created".into()),
+                ("@kind1".into(), "shipped".into()),
+                ("@revision1".into(), 2.into()),
+            ]
+        );
+    }
+
+    #[test]
     fn select_should_apply_predicate() {
         // arrange
         let id = Uuid::nil();
         let predicate = PredicateBuilder::new(Some(&id))
             .version(Excluded(new_version(2, 1)))
             .stored_on(UNIX_EPOCH + Duration::from_secs(60)..UNIX_EPOCH + Duration::from_secs(120))
-            .add_type(Schema::new("created", 1))
-            .add_type(Schema::new("shipped", 2))
+            .add_type(Schema::version::<1>("created"))
+            .add_type(Schema::version::<2>("shipped"))
             .build();
 
         // act

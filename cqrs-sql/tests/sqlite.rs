@@ -238,3 +238,41 @@ async fn verify_sqlite_does_not_allow_save_after_delete() -> TestResult {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn verify_sqlite_reports_invalid_revision() -> TestResult {
+    // arrange
+    const TABLE: &str = "TMP_63b1d0a54f7e4f0a9c2b8e6d1f3a70c4";
+
+    let sqlite = SqlitePoolOptions::new().connect("sqlite::memory:").await?;
+    let events: EventStore<String> = EventStore::builder()
+        .pool(sqlite.clone())
+        .table(TABLE)
+        .transcoder(domain::transcoder::events())
+        .try_into()?;
+    let migrator = Migrator::new();
+
+    migrator.add(SqlStoreMigration::with_pool(&events, sqlite.clone()));
+    migrator.run().await?;
+
+    let repository = Repository::<Account>::new(events);
+    let id = scenario::open_new_account(&repository, "12345", 50.0).await?;
+
+    // the store is modified outside of the library so that a revision is 0, which
+    // no message can have
+    sqlx::query(AssertSqlSafe(format!("UPDATE events_{TABLE} SET revision = 0;")))
+        .execute(&sqlite)
+        .await?;
+
+    // act
+    let result = repository.get(&id, None).await;
+
+    // assert
+    // the failure names the offending message type rather than surfacing as an
+    // opaque decoding or deserialization error
+    assert!(
+        matches!(&result, Err(RepositoryError::InvalidSchema(kind)) if kind.ends_with("Opened")),
+        "expected an invalid schema error, but got {result:?}"
+    );
+    Ok(())
+}

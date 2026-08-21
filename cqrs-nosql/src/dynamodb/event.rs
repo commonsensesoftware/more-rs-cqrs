@@ -24,11 +24,62 @@ use aws_sdk_dynamodb::{
 };
 use cqrs::{
     Clock, Range, Version,
-    event::{Event, EventStream, IdStream, Predicate, Store, StoreError, StoreOptions},
+    event::{Event, EventStream, IdStream, Predicate, Store, StoreError, StoreOptions, filter_types},
     message::{Saved, Schema},
 };
 use futures::stream;
-use std::{error::Error, fmt::Debug, ops::Bound, str::FromStr, sync::Arc, time::SystemTime};
+use std::{
+    convert::Infallible, error::Error, fmt::Debug, num::NonZeroU8, ops::Bound, str::FromStr, sync::Arc,
+    time::SystemTime,
+};
+
+/// Translates the message types of a predicate into a DynamoDB filter expression.
+struct TypeFilter<'a> {
+    text: &'a mut String,
+
+    // the request is built by value, so it is taken and replaced as each value is added
+    request: Option<QueryFluentBuilder>,
+}
+
+impl<'a> cqrs::event::TypeFilter for TypeFilter<'a> {
+    type Error = Infallible;
+
+    fn begin(&mut self, many: bool) {
+        if many {
+            self.text.push('(');
+        }
+    }
+
+    // the attribute values are 1-based to match the other placeholders in the expression
+    fn condition(&mut self, index: usize, kind: &str, revision: Option<NonZeroU8>) -> Result<(), Self::Error> {
+        let index = index + 1;
+        let mut request = self.request.take().unwrap();
+
+        self.text.push_str("(kind = :kind");
+        self.text.push_str(&index.to_string());
+        request = request.expression_attribute_values(format!(":kind{index}"), S(kind.into()));
+
+        if let Some(revision) = revision {
+            self.text.push_str(" AND revision = :rev");
+            self.text.push_str(&index.to_string());
+            request = request.expression_attribute_values(format!(":rev{index}"), N(revision.to_string()));
+        }
+
+        self.text.push(')');
+        self.request = Some(request);
+        Ok(())
+    }
+
+    fn or(&mut self) {
+        self.text.push_str(" OR ");
+    }
+
+    fn end(&mut self, many: bool) {
+        if many {
+            self.text.push(')');
+        }
+    }
+}
 
 fn apply_predicate<T>(
     mut request: QueryFluentBuilder,
@@ -84,51 +135,17 @@ where
             request = request.expression_attribute_values(":to", N(crate::to_secs(to).to_string()));
         }
 
-        let mut schemas = predicate.types.iter();
-
-        if let Some(schema) = schemas.next() {
-            let many = predicate.types.len() > 1;
-
-            if !filter.is_empty() {
-                filter.push_str(" AND ");
-            }
-
-            if many {
-                filter.push('(');
-            }
-
-            let mut i = 1usize;
-            let mut kind = format!(":kind{i}");
-            let mut rev = format!(":rev{i}");
-
-            filter.push_str("(kind = ");
-            filter.push_str(&kind);
-            filter.push_str(" AND revision = ");
-            filter.push_str(&rev);
-            filter.push(')');
-            request = request
-                .expression_attribute_values(kind, S(schema.kind().into()))
-                .expression_attribute_values(rev, S(schema.version().to_string()));
-
-            for schema in schemas {
-                i += 1;
-                kind = format!(":kind{i}");
-                rev = format!(":rev{i}");
-
-                filter.push_str(" OR (kind = ");
-                filter.push_str(&kind);
-                filter.push_str(" AND revision = ");
-                filter.push_str(&rev);
-                filter.push(')');
-                request = request
-                    .expression_attribute_values(kind, S(schema.kind().into()))
-                    .expression_attribute_values(rev, S(schema.version().to_string()));
-            }
-
-            if many {
-                filter.push(')');
-            }
+        if !predicate.types.is_empty() && !filter.is_empty() {
+            filter.push_str(" AND ");
         }
+
+        let mut types = TypeFilter {
+            text: &mut filter,
+            request: Some(request),
+        };
+
+        filter_types(&predicate.types, &mut types).unwrap();
+        request = types.request.unwrap();
 
         if !filter.is_empty() {
             request = request.filter_expression(filter);
@@ -211,7 +228,7 @@ where
                 .item("version", N(version.sort_key().to_string()))
                 .item("storedOn", N(stored_on.to_string()))
                 .item("kind", S(schema.kind().into()))
-                .item("revision", N(schema.version().to_string()))
+                .item("revision", N(schema.revision().to_string()))
                 .item("content", B(Blob::new(content)))
                 .condition_expression("attribute_not_exists(id) AND attribute_not_exists(version)")
                 .return_values_on_condition_check_failure(AllOld);
@@ -259,7 +276,7 @@ where
             .item("version", N(version.sort_key().to_string()))
             .item("storedOn", N(stored_on.to_string()))
             .item("kind", S(schema.kind().into()))
-            .item("revision", N(schema.version().to_string()))
+            .item("revision", N(schema.revision().to_string()))
             .item("content", B(Blob::new(content)))
             .condition_expression("attribute_not_exists(id) AND attribute_not_exists(version)")
             // the conflicting item identifies whether the version was taken or the aggregate was deleted
@@ -304,7 +321,7 @@ where
             .and_then(|value| value.as_s().ok())
             .map(String::as_str)
             == Some(schema.kind())
-            && coerce::<u8>("revision", &existing, Attr::as_n) == schema.version()
+            && coerce::<u8>("revision", &existing, Attr::as_n) == schema.revision().get()
             && existing
                 .get("correlationId")
                 .and_then(|value| value.as_s().ok())
@@ -353,7 +370,7 @@ where
                 .item("version", N(version.sort_key().to_string()))
                 .item("storedOn", N(stored_on.to_string()))
                 .item("kind", S(schema.kind().into()))
-                .item("revision", N(schema.version().to_string()))
+                .item("revision", N(schema.revision().to_string()))
                 .item("content", B(Blob::new(content)))
                 .condition_expression("attribute_not_exists(id) AND attribute_not_exists(version)")
                 .return_values_on_condition_check_failure(AllOld);
@@ -490,9 +507,12 @@ where
             while let Some(item) = items.next().await {
                 let attributes = item.box_err()?;
                 let mut version = from_sort_key(coerce("version", &attributes, Attr::as_n));
+                let kind = coerce::<String>("kind", &attributes, Attr::as_s);
+                let revision = coerce::<u8>("revision", &attributes, Attr::as_n);
                 let schema = Schema::new(
-                    coerce::<String>("kind", &attributes, Attr::as_s),
-                    coerce("revision", &attributes, Attr::as_n));
+                    &kind,
+                    NonZeroU8::new(revision).ok_or_else(|| StoreError::InvalidSchema(kind.clone()))?,
+                );
                 let empty = Blob::default();
                 let content = if let Some(attribute) = attributes.get("content") {
                     attribute.as_b().unwrap_or(&empty)
@@ -530,5 +550,89 @@ where
 
         delete_all(&self.ddb, &self.table, id.to_string(), None, self.options.clock().now()).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aws_sdk_dynamodb::config::{BehaviorVersion, Config, Credentials, Region};
+    use cqrs::event::PredicateBuilder;
+    use cqrs::message::Type;
+    use uuid::Uuid;
+
+    fn request() -> QueryFluentBuilder {
+        let config = Config::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .region(Region::new("us-east-1"))
+            .credentials_provider(Credentials::for_tests())
+            .build();
+
+        Client::from_conf(config).query().table_name("events")
+    }
+
+    fn filter(predicate: &Predicate<'_, Uuid>) -> (String, Vec<(String, Attr)>) {
+        let request = apply_predicate(request(), Some(predicate), Bound::Unbounded);
+        let text = request.get_filter_expression().clone().unwrap_or_default();
+        let mut values: Vec<_> = request
+            .get_expression_attribute_values()
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+
+        values.sort_by(|(left, _), (right, _)| left.cmp(right));
+        (text, values)
+    }
+
+    #[test]
+    fn apply_predicate_should_match_revision_as_a_number() {
+        // arrange
+        let predicate = PredicateBuilder::<Uuid>::new(None)
+            .add_type(Schema::version::<1>("created"))
+            .build();
+
+        // act
+        let (text, values) = filter(&predicate);
+
+        // assert
+        assert_eq!(text, "(kind = :kind1 AND revision = :rev1)");
+        assert_eq!(
+            values,
+            vec![
+                (":kind1".to_string(), S("created".into())),
+                (":rev1".to_string(), N("1".into())),
+            ]
+        );
+    }
+
+    #[test]
+    fn apply_predicate_should_not_constrain_revision_for_versionless_type() {
+        // arrange
+        let predicate = PredicateBuilder::<Uuid>::new(None)
+            .add_type(Type::any("created"))
+            .build();
+
+        // act
+        let (text, values) = filter(&predicate);
+
+        // assert
+        assert_eq!(text, "(kind = :kind1)");
+        assert_eq!(values, vec![(":kind1".to_string(), S("created".into()))]);
+    }
+
+    #[test]
+    fn apply_predicate_should_mix_versionless_and_versioned_types() {
+        // arrange
+        let predicate = PredicateBuilder::<Uuid>::new(None)
+            .add_type(Type::any("created"))
+            .add_type(Schema::version::<2>("shipped"))
+            .build();
+
+        // act
+        let (text, _) = filter(&predicate);
+
+        // assert
+        assert_eq!(text, "((kind = :kind1) OR (kind = :kind2 AND revision = :rev2))");
     }
 }

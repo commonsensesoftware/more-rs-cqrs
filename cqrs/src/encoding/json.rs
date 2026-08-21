@@ -45,13 +45,20 @@ impl<T: Encoded> Json<T> {
         Self::default()
     }
 
-    /// Initializes a new [JSON](Json) message encoding for the specified message type and version.
+    /// Initializes a new [JSON](Json) message encoding for a specific of the message type.
     ///
-    /// # Arguments
+    /// # Remarks
     ///
-    /// * `version` - the supported message version
-    pub fn version(version: u8) -> Self {
-        Self::with_schema(Schema::new(T::schema().kind(), version))
+    /// [Self::new] registers a message type for its own [schema](Encoded::schema). This registers the same type for
+    /// another revision of the same [kind](Schema::kind), which allows one type to decode more than one
+    /// revision; for example, when a revision only added fields the type is able to default. The result is effectively
+    /// read-only, because encoding always uses the [schema](Encoded::schema) of the message itself and, therefore,
+    /// always writes the current revision.
+    ///
+    /// Use [Self::with_schema] instead when the [kind](Schema::kind) changed as well, such as when the message type was
+    /// moved or renamed. A `VERSION` of `0` fails to compile.
+    pub fn version<const VERSION: u8>() -> Self {
+        Self::with_schema(Schema::version::<VERSION>(T::schema().kind()))
     }
 }
 

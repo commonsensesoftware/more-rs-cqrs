@@ -13,7 +13,7 @@ use cqrs::{
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::{fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, marker::PhantomData, num::NonZeroU8};
 
 /// Represents the item of a stored [snapshot](Snapshot).
 #[derive(Deserialize, Serialize)]
@@ -122,7 +122,9 @@ where
 
         if let Some(item) = items.next().await {
             let document = item.box_err()?;
-            let schema = Schema::new(document.kind, document.revision);
+            let revision =
+                NonZeroU8::new(document.revision).ok_or_else(|| SnapshotError::InvalidSchema(document.kind.clone()))?;
+            let schema = Schema::new(document.kind, revision);
             let mut version = new_version(document.version, 0);
             let content = super::decode(&document.content)?;
 
@@ -156,7 +158,7 @@ where
             version: version.number(),
             taken_on,
             kind: schema.kind().into(),
-            revision: schema.version(),
+            revision: schema.revision().get(),
             content: super::encode(&content),
         };
         let client = self.container.resolve().await.box_err()?;

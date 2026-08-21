@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
-use syn::{DeriveInput, LitInt, LitStr, Result, meta::ParseNestedMeta, parse2};
+use syn::{DeriveInput, Error, LitInt, LitStr, Result, meta::ParseNestedMeta, parse2};
 
 pub(crate) struct EventAttribute {
     kind: Option<LitStr>,
@@ -22,7 +22,14 @@ impl EventAttribute {
             let version: Option<LitInt> = args.value()?.parse()?;
 
             if let Some(ver) = version {
-                self.version = ver.base10_parse::<u8>()?;
+                let value = ver.base10_parse::<u8>()?;
+
+                // version 0 matches any version, which is meaningless for a message that is encoded and stored
+                if value == 0 {
+                    return Err(Error::new(ver.span(), "version must be greater than 0"));
+                }
+
+                self.version = value;
             }
 
             Ok(())
@@ -80,7 +87,7 @@ pub(crate) fn expand(attribute: EventAttribute, input: TokenStream) -> TokenStre
 
             impl cqrs::message::Encoded for #name {
                 fn schema() -> cqrs::message::Schema {
-                    cqrs::message::Schema::new(#kind, #version)
+                    cqrs::message::Schema::version::<#version>(#kind)
                 }
             }
         };

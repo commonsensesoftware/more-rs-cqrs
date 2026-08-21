@@ -38,6 +38,15 @@ pub enum RepositoryError<T: Debug + Send> {
     #[error("the requested operation is unsupported")]
     Unsupported,
 
+    /// Indicates a stored message [schema](crate::message::Schema) is invalid.
+    ///
+    /// # Remarks
+    ///
+    /// A message revision is always greater than `0`. A stored revision of `0` indicates the backing store has been
+    /// modified outside of the library.
+    #[error("the stored revision for message type {0} is invalid")]
+    InvalidSchema(String),
+
     /// Indicates an unknown [error](Error).
     #[error(transparent)]
     Unknown(#[from] Box<dyn Error + Send>),
@@ -51,6 +60,7 @@ impl<T: Debug + Send + 'static> From<StoreError<T>> for RepositoryError<T> {
             StoreError::InvalidEncoding(error) => Self::InvalidEncoding(error),
             StoreError::InvalidVersion => Self::InvalidVersion,
             StoreError::Unsupported => Self::Unsupported,
+            StoreError::InvalidSchema(kind) => Self::InvalidSchema(kind),
             StoreError::Unknown(error) => Self::Unknown(error),
             _ => Self::Unknown(Box::new(value)),
         }
@@ -63,6 +73,7 @@ impl<T: Debug + PartialEq + Send> PartialEq for RepositoryError<T> {
             (Self::NotFound(l0), Self::NotFound(r0)) => l0 == r0,
             (Self::Conflict(l0, l1), Self::Conflict(r0, r1)) => l0 == r0 && l1 == r1,
             (Self::InvalidEncoding(l0), Self::InvalidEncoding(r0)) => l0 == r0,
+            (Self::InvalidSchema(l0), Self::InvalidSchema(r0)) => l0 == r0,
             (Self::Unknown(_), Self::Unknown(_)) => false,
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }
@@ -116,7 +127,16 @@ where
             let mut aggregate = A::default();
 
             aggregate.set_clock(self.store.clock());
-            aggregate.replay_all(&mut history).await?;
+
+            // replaying erases the error type, so a store error is recovered to report why
+            // the load failed rather than reporting it as unknown
+            if let Err(error) = aggregate.replay_all(&mut history).await {
+                return Err(match error.downcast::<StoreError<A::ID>>() {
+                    Ok(error) => (*error).into(),
+                    Err(error) => RepositoryError::Unknown(error),
+                });
+            }
+
             Ok(aggregate)
         } else {
             Err(RepositoryError::NotFound(id.clone()))
