@@ -16,7 +16,7 @@ impl Retention {
     /// # Arguments
     ///
     /// * `count` - the number of snapshots to retain
-    pub fn count(count: u8) -> Self {
+    pub const fn count(count: u8) -> Self {
         Self {
             count: Some(count),
             age: None,
@@ -28,7 +28,7 @@ impl Retention {
     /// # Arguments
     ///
     /// * `age` - the [age](Duration) of snapshots to retain
-    pub fn age(age: Duration) -> Self {
+    pub const fn age(age: Duration) -> Self {
         Self {
             count: None,
             age: Some(age),
@@ -40,7 +40,7 @@ impl Retention {
     /// # Arguments
     ///
     /// * `days` - the number of days to retain snapshots for
-    pub fn days(days: u16) -> Self {
+    pub const fn days(days: u16) -> Self {
         Self::age(Duration::from_secs(60u64 * 60u64 * 24u64 * days as u64))
     }
 }

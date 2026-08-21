@@ -124,12 +124,12 @@ impl<ID> StoreOptions<ID> {
     }
 
     /// Gets the configured store [concurrency](Concurrency) option.
-    pub fn concurrency(&self) -> Concurrency {
+    pub const fn concurrency(&self) -> Concurrency {
         self.concurrency
     }
 
     /// Gets the configured store [deletion](Delete) option.
-    pub fn delete(&self) -> Delete {
+    pub const fn delete(&self) -> Delete {
         self.delete
     }
 

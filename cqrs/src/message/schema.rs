@@ -54,8 +54,8 @@ impl Schema {
 
     /// Gets the schema type.
     #[inline]
-    pub fn kind(&self) -> &str {
-        &self.kind
+    pub const fn kind(&self) -> &str {
+        self.kind.as_str()
     }
 
     /// Gets the schema revision.
@@ -64,7 +64,7 @@ impl Schema {
     ///
     /// The revision is the declared message version. The default value is `1`.
     #[inline]
-    pub fn revision(&self) -> NonZeroU8 {
+    pub const fn revision(&self) -> NonZeroU8 {
         self.revision
     }
 }

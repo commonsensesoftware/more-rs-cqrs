@@ -12,13 +12,13 @@ pub enum Delete {
 impl Delete {
     /// Gets a value indicating whether delete is supported.
     #[inline]
-    pub fn supported(&self) -> bool {
+    pub const fn supported(&self) -> bool {
         matches!(self, Delete::Supported)
     }
 
     /// Gets a value indicating whether delete is unsupported.
     #[inline]
-    pub fn unsupported(&self) -> bool {
+    pub const fn unsupported(&self) -> bool {
         matches!(self, Delete::Unsupported)
     }
 }

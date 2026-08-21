@@ -37,7 +37,7 @@ enum Field {
 }
 
 impl Field {
-    fn as_str(&self) -> &'static str {
+    const fn as_str(&self) -> &'static str {
         FIELDS_PASCAL[*self as usize]
     }
 }

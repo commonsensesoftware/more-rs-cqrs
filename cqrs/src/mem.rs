@@ -25,7 +25,7 @@ use uuid::Uuid;
 // | ------- | ------- | -------- |
 // | version | unused  | sequence |
 
-fn new_version(number: u32) -> Version {
+const fn new_version(number: u32) -> Version {
     Version::new((number as u64) << 32)
 }
 

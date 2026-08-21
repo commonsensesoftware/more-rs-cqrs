@@ -13,17 +13,17 @@ impl<T> Saved<T> {
     ///
     /// * `message` - The versioned [message](super::Message)
     /// * `version` - The message [version](Version)
-    pub fn new(message: T, version: Version) -> Self {
+    pub const fn new(message: T, version: Version) -> Self {
         Self { message, version }
     }
 
     /// Gets the [message](super::Message).
-    pub fn message(&self) -> &T {
+    pub const fn message(&self) -> &T {
         &self.message
     }
 
     /// Gets the message [version](Version), if any.
-    pub fn version(&self) -> Version {
+    pub const fn version(&self) -> Version {
         self.version
     }
 }

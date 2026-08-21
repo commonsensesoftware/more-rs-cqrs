@@ -64,8 +64,8 @@ impl Type {
 
     /// Gets the message type.
     #[inline]
-    pub fn kind(&self) -> &str {
-        &self.kind
+    pub const fn kind(&self) -> &str {
+        self.kind.as_str()
     }
 
     /// Gets the message revision the type applies to, if any.
@@ -74,7 +74,7 @@ impl Type {
     ///
     /// [None] indicates the type applies to every revision.
     #[inline]
-    pub fn revision(&self) -> Option<NonZeroU8> {
+    pub const fn revision(&self) -> Option<NonZeroU8> {
         self.revision
     }
 

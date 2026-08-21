@@ -12,7 +12,7 @@ pub enum Concurrency {
 impl Concurrency {
     /// Gets a value indicating whether concurrency is enforced.
     #[inline]
-    pub fn enforced(&self) -> bool {
+    pub const fn enforced(&self) -> bool {
         matches!(self, Self::Enforced)
     }
 }

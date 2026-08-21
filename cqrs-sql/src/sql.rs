@@ -68,7 +68,7 @@ pub trait Provider {
     }
 }
 
-fn op<T: Copy>(bound: &Bound<T>, op1: &'static str, op2: &'static str) -> Option<(T, &'static str)> {
+const fn op<T: Copy>(bound: &Bound<T>, op1: &'static str, op2: &'static str) -> Option<(T, &'static str)> {
     match bound {
         Included(value) => Some((*value, op1)),
         Excluded(value) => Some((*value, op2)),
@@ -76,9 +76,9 @@ fn op<T: Copy>(bound: &Bound<T>, op1: &'static str, op2: &'static str) -> Option
     }
 }
 
-pub(crate) fn greater_than<T: Copy>(bound: &Bound<T>) -> Option<(T, &'static str)> {
+pub(crate) const fn greater_than<T: Copy>(bound: &Bound<T>) -> Option<(T, &'static str)> {
     op(bound, ">=", ">")
 }
-pub(crate) fn less_than<T: Copy>(bound: &Bound<T>) -> Option<(T, &'static str)> {
+pub(crate) const fn less_than<T: Copy>(bound: &Bound<T>) -> Option<(T, &'static str)> {
     op(bound, "<=", "<")
 }

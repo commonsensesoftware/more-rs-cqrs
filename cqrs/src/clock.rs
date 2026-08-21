@@ -17,7 +17,7 @@ pub struct WallClock;
 
 impl WallClock {
     /// Initializes a new [WallClock].
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 }
