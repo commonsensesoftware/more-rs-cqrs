@@ -29,6 +29,7 @@ pub trait Mask: Send + Sync {
 }
 
 impl<'a> AsRef<dyn Mask + 'a> for dyn Mask + 'a {
+    #[inline]
     fn as_ref(&self) -> &(dyn Mask + 'a) {
         self
     }
@@ -126,6 +127,7 @@ impl Mask for SecureMask {
 }
 
 impl<'a> AsRef<dyn Mask + 'a> for SecureMask {
+    #[inline]
     fn as_ref(&self) -> &(dyn Mask + 'a) {
         self
     }

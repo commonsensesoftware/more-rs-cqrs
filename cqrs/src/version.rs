@@ -61,36 +61,42 @@ impl Version {
 }
 
 impl From<u64> for Version {
+    #[inline]
     fn from(value: u64) -> Self {
         Self(value)
     }
 }
 
 impl From<[u8; 8]> for Version {
+    #[inline]
     fn from(value: [u8; 8]) -> Self {
         Self(u64::from_be_bytes(value))
     }
 }
 
 impl From<Version> for u64 {
+    #[inline]
     fn from(value: Version) -> Self {
         value.0
     }
 }
 
 impl From<&Version> for u64 {
+    #[inline]
     fn from(value: &Version) -> Self {
         value.0
     }
 }
 
 impl From<Version> for [u8; 8] {
+    #[inline]
     fn from(value: Version) -> Self {
         value.0.to_be_bytes()
     }
 }
 
 impl From<&Version> for [u8; 8] {
+    #[inline]
     fn from(value: &Version) -> Self {
         value.0.to_be_bytes()
     }
@@ -99,6 +105,7 @@ impl From<&Version> for [u8; 8] {
 impl TryFrom<&[u8]> for Version {
     type Error = TryFromSliceError;
 
+    #[inline]
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         Ok(<Self as From<[u8; 8]>>::from(value.try_into()?))
     }
@@ -107,6 +114,7 @@ impl TryFrom<&[u8]> for Version {
 impl TryFrom<&Vec<u8>> for Version {
     type Error = TryFromSliceError;
 
+    #[inline]
     fn try_from(value: &Vec<u8>) -> Result<Self, Self::Error> {
         Self::try_from(value.as_slice())
     }
@@ -115,6 +123,7 @@ impl TryFrom<&Vec<u8>> for Version {
 impl TryFrom<Vec<u8>> for Version {
     type Error = TryFromSliceError;
 
+    #[inline]
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
         Self::try_from(value.as_slice())
     }

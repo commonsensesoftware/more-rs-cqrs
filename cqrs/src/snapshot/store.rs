@@ -84,16 +84,19 @@ impl StoreOptions {
     }
 
     /// Gets the configured [mask](Mask), if any.
+    #[inline]
     pub fn mask(&self) -> Option<&(dyn Mask + 'static)> {
         self.mask.as_deref()
     }
 
     /// Gets the configured [clock](Clock).
+    #[inline]
     pub fn clock(&self) -> &dyn Clock {
         &*self.clock
     }
 
     /// Gets the configured [transcoder](Transcoder).
+    #[inline]
     pub fn transcoder(&self) -> &Transcoder<dyn Snapshot> {
         &self.transcoder
     }

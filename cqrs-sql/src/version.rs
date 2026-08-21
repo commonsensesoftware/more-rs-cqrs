@@ -30,6 +30,7 @@ fn max_bit(bits: u32) -> u8 {
     0
 }
 
+#[inline]
 fn encode(version: i32, sequence: i16) -> u64 {
     let version = version as u32;
     let value = version << 8 | sequence as u32;
@@ -101,18 +102,22 @@ pub struct SqlVersionDisplay {
 }
 
 impl SqlVersion for Version {
+    #[inline]
     fn max() -> Self {
         Self::new(u32::MAX as u64)
     }
 
+    #[inline]
     fn number(&self) -> i32 {
         ((u64::from(self) & 0x00000000_FFFFFF00) >> 8) as i32
     }
 
+    #[inline]
     fn sequence(&self) -> i16 {
         (u64::from(self) & 0x00000000_000000FF) as i16
     }
 
+    #[inline]
     fn increment(&self, part: SqlVersionPart) -> Self {
         match part {
             SqlVersionPart::Version => Self::new(encode(self.number().saturating_add(1), 0)),
