@@ -37,7 +37,7 @@ impl<T: ?Sized + Message> Transcoder<T> {
         if let Some(encoding) = self.encodings.get(&schema) {
             Ok(encoding.encode(message)?)
         } else {
-            Err(EncodingError::Unregistered(schema))
+            Err(EncodingError::UnknownSchema(schema))
         }
     }
 
@@ -55,7 +55,7 @@ impl<T: ?Sized + Message> Transcoder<T> {
         if let Some(encoding) = self.encodings.get(schema) {
             Ok(encoding.decode(message)?)
         } else {
-            Err(EncodingError::Unregistered(schema.clone()))
+            Err(EncodingError::UnknownSchema(schema.clone()))
         }
     }
 

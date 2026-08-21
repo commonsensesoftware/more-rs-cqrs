@@ -233,7 +233,7 @@ fn encoding_with_schema_should_decode_previous_kind() {
     assert_eq!(*actual, expected);
     assert_eq!(
         discovery::events().decode(&old, &stored).err(),
-        Some(EncodingError::Unregistered(old))
+        Some(EncodingError::UnknownSchema(old))
     );
 }
 
@@ -281,7 +281,7 @@ fn transcoder_merge_should_not_modify_on_duplicate_schema() {
     assert!(result.is_err());
     assert_eq!(
         transcoder.encode(&Placed::default()).unwrap_err(),
-        EncodingError::Unregistered(Placed::schema())
+        EncodingError::UnknownSchema(Placed::schema())
     );
 }
 
@@ -322,7 +322,7 @@ fn transcoder_should_not_decode_previous_revision_that_is_unregistered() {
     let result = transcoder.decode(&previous, stored);
 
     // assert
-    assert_eq!(result.err(), Some(EncodingError::Unregistered(previous)));
+    assert_eq!(result.err(), Some(EncodingError::UnknownSchema(previous)));
 }
 
 #[test]
