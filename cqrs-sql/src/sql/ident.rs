@@ -36,16 +36,19 @@ impl Delimiters {
     ///
     /// * `open` - the character which opens a quoted identifier
     /// * `close` - the character which closes a quoted identifier
+    #[inline]
     pub const fn new(open: char, close: char) -> Self {
         Self { open, close }
     }
 
     /// Gets the character which opens a quoted identifier.
+    #[inline]
     pub const fn open(&self) -> char {
         self.open
     }
 
     /// Gets the character which closes a quoted identifier.
+    #[inline]
     pub const fn close(&self) -> char {
         self.close
     }
@@ -128,11 +131,13 @@ impl<'a> Ident<'a> {
     }
 
     /// Gets the associated schema name, if any.
+    #[inline]
     pub fn schema(&self) -> Option<&str> {
         self.0.as_deref()
     }
 
     /// Gets the object identifier name.
+    #[inline]
     pub fn name(&self) -> &str {
         &self.1
     }

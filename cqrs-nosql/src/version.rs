@@ -37,6 +37,7 @@ fn max_bit(bits: u32) -> u8 {
     0
 }
 
+#[inline]
 fn encode(version: u32, sequence: u8) -> u64 {
     let value = version << 8 | min(sequence, MAX_SEQ) as u32;
     let set_bits = (value.count_ones() as u64) << 32;
@@ -125,22 +126,27 @@ pub struct NoSqlVersionDisplay {
 }
 
 impl NoSqlVersion for Version {
+    #[inline]
     fn max() -> Self {
         Self::new(encode(u32::MAX >> 8, MAX_SEQ))
     }
 
+    #[inline]
     fn number(&self) -> u32 {
         ((u64::from(self) & 0x00000000_FFFFFF00) >> 8) as u32
     }
 
+    #[inline]
     fn sequence(&self) -> u8 {
         (u64::from(self) & 0x00000000_000000FF) as u8
     }
 
+    #[inline]
     fn sort_key(&self) -> u32 {
         (u64::from(self) & 0x00000000_FFFFFFFF) as u32
     }
 
+    #[inline]
     fn increment(&self, part: NoSqlVersionPart) -> Self {
         match part {
             NoSqlVersionPart::Version => Self::new(encode(self.number().saturating_add(1), 0)),
@@ -148,6 +154,7 @@ impl NoSqlVersion for Version {
         }
     }
 
+    #[inline]
     fn previous(&self) -> Option<Self> {
         let number = self.number();
 

@@ -63,6 +63,7 @@ impl Type {
     }
 
     /// Gets the message type.
+    #[inline]
     pub fn kind(&self) -> &str {
         &self.kind
     }
@@ -72,6 +73,7 @@ impl Type {
     /// # Remarks
     ///
     /// [None] indicates the type applies to every revision.
+    #[inline]
     pub fn revision(&self) -> Option<NonZeroU8> {
         self.revision
     }
@@ -81,6 +83,7 @@ impl Type {
     /// # Arguments
     ///
     /// * `schema` - the [schema](Schema) to match against
+    #[inline]
     pub fn matches(&self, schema: &Schema) -> bool {
         self.kind == schema.kind() && self.revision.is_none_or(|revision| revision == schema.revision())
     }

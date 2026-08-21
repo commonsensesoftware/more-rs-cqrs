@@ -15,6 +15,7 @@ pub struct Descriptor {
 
 impl Descriptor {
     /// Initializes a new [Descriptor].
+    #[inline]
     pub fn new(schema: Schema, version: Version, content: Vec<u8>) -> Self {
         Self {
             schema,

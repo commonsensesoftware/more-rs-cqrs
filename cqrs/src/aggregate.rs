@@ -61,6 +61,7 @@ impl<'a> ChangeSet<'a> {
     ///
     /// * `events` - the set of uncommitted [events](Event)
     /// * `version` - the current aggregate [version](Version)
+    #[inline]
     pub fn new(events: &'a mut Vec<Box<dyn Event>>, version: &'a mut Version) -> Self {
         let expected_version = *version;
 
@@ -72,16 +73,19 @@ impl<'a> ChangeSet<'a> {
     }
 
     /// Gets a value indicating whether there are any changes.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
     }
 
     /// Gets the expected [version](Version) associated with the changes.
+    #[inline]
     pub fn expected_version(&self) -> Version {
         self.expected_version
     }
 
     /// Gets the set of uncommitted [events](Event).
+    #[inline]
     pub fn uncommitted(&mut self) -> &mut [Box<dyn Event>] {
         self.events
     }
@@ -91,6 +95,7 @@ impl<'a> ChangeSet<'a> {
     /// # Arguments
     ///
     /// * `version` - the new, accepted [version](Version)
+    #[inline]
     pub fn accept(&mut self, version: Version) {
         *self.version = version;
         self.events.clear();
